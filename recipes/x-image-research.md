@@ -35,6 +35,8 @@
 ## Known-good ChatGPT transport path
 通常の実行環境から外向きHTTP/DNSが使えず、Xの直接media URLをローカル保存できない場合の実証済み経路。
 
+**最短の実行手順は [`tools/x-post-resolver/bridge-usage.md`](../tools/x-post-resolver/bridge-usage.md) を読む。** `request-url.txt` の1行だけ差し替える運用にしてあり、workflow自体を毎回書き換えない。
+
 ```text
 X post URL
   ↓
@@ -66,6 +68,7 @@ ChatGPT本文内に実画像表示
 ### GitHub connector上の注意
 - 現在の `fetch_commit_workflow_runs` はPR起点runの確認に向く。pushだけではrunが見えない場合がある。
 - connectorからrun/log/artifactまで追う必要がある場合は、temporary branch + draft PRでworkflowを起動する経路が実証済み。
+- 任意postではtemporary branch上の `tools/x-post-resolver/request-url.txt` だけ変更する。workflow本体を変更しない。
 - workflow側は画像をdownloadしただけで終わらず、`actions/upload-artifact` まで行う。artifact化しないと会話側へbinaryを搬送できない。
 - テスト用PRは結果確認後にcloseする。
 
@@ -88,6 +91,10 @@ ChatGPT本文内に実画像表示
 4. **media URL取得だけで終了**
    - resolverとしては成功でも、画像提示taskとしては失敗。
    - `x-post-resolver` の成功判定とユーザー依頼の成功判定を分ける。
+
+5. **Actions workflowを対象postごとに書き換える**
+   - 動くが毎回の再発明になる。
+   - `request-url.txt` をbranch上で差し替えるbridge運用を使う。
 
 ## Completion
 - 元postまたは元作者を特定。
