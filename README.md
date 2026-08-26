@@ -6,11 +6,23 @@ AI / assistant workflows用の小さな補助ツールと定型作業recipeの�
 
 ## Future assistant entrypoint
 
-後からこのリポジトリを使う場合は、まずこのREADMEの **Tool index / Recipe index** を確認する。
+後からこのリポジトリを使う場合は、まずこのREADMEの **Task routing / Tool index / Recipe index** を確認する。
 
 - URLやmediaを機械的に取得・変換するなら `tools/<name>/README.md`
 - 「Reddit調査」「X画像調査」のような定型依頼なら `recipes/<name>.md`
 - 必要がない限りリポジトリ全体を走査しない。
+
+## Task routing — check before answering
+
+次の依頼パターンに当たる場合、通常回答を始める前に対応recipeを読む。検索結果だけで早上がりしない。
+
+| User intent / trigger | Read first | Critical completion |
+| --- | --- | --- |
+| 「Reddit調べて」「Redditの反応・評判」 | [reddit-research](recipes/reddit-research.md) | relevant threadだけでなく必要なcommentまで確認 |
+| 「Xから画像探して」「Xの画像を本文に載せて/貼って/見せて」「最近の公式絵を持ってきて」 | [x-image-research](recipes/x-image-research.md) | **実画像が最終回答本文で描画されるまで**。post URLやmedia URLだけでは未完了 |
+| ふたば/X/Reddit/GitHub等をまたいだ実例調査 | [source-deep-dive](recipes/source-deep-dive.md) | sourceを横断して結論を変える材料まで確認 |
+
+特にX画像提示では、外部 `pbs.twimg.com` URLをMarkdown画像にしただけではChatGPT UI上で表示されないことがある。`recipes/x-image-research.md` のknown-good transport pathとfailure ledgerを参照し、同じ失敗探索を繰り返さない。
 
 ## Structure
 
@@ -44,7 +56,7 @@ AIUse/
 | Recipe | Purpose |
 | --- | --- |
 | [reddit-research](recipes/reddit-research.md) | Redditの評判・体験談・commentまで確認する調査 |
-| [x-image-research](recipes/x-image-research.md) | Xの元post特定→本文/media確認→画像提示まで進める |
+| [x-image-research](recipes/x-image-research.md) | Xの元post特定→本文/media確認→**ChatGPT本文内の実画像表示**まで進める |
 | [source-deep-dive](recipes/source-deep-dive.md) | ふたば/X/Reddit/GitHub等を横断して実例を深掘り |
 
 ## Rules for future tools
@@ -73,5 +85,6 @@ AIUse/
 recipeはコードではなく、未来のassistantが定型依頼を最後まで完了するためのチェックリスト。
 
 - tool名を固定で参照しすぎず、通常web取得で足りる場合はそちらを優先する。
-- 「検索した」で止めず、依頼の成果物（本文確認、comment精読、画像提示など）をCompletionに書く。
+- 「検索した」「URLを取れた」で止めず、依頼の成果物（本文確認、comment精読、画像提示など）をCompletionに書く。
+- UI上の見え方が依頼の一部なら、**レンダリングされたか**まで完成条件に含める。
 - source仕様が変わったらtoolだけでなく該当recipeも見直す。
