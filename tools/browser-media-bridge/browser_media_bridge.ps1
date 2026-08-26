@@ -12,19 +12,32 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Try-YtDlpPython([string]$PythonPath, [string]$Label) {
+  if (-not $PythonPath -or -not (Test-Path $PythonPath)) { return $null }
+  try {
+    $version = (& $PythonPath -m yt_dlp --version 2>$null | Select-Object -First 1).Trim()
+    if ($LASTEXITCODE -eq 0 -and $version) {
+      Write-Host "Using $Label yt-dlp: $version"
+      return @($PythonPath, '-m', 'yt_dlp')
+    }
+  } catch {
+    Write-Host "$Label yt-dlp probe failed: $($_.Exception.Message)"
+  }
+  return $null
+}
+
 function Resolve-YtDlpCommand {
-  # First use the exact Python installation verified interactively on this PC.
+  if ($env:AIUSE_YTDLP_PYTHON) {
+    Write-Host "AIUSE_YTDLP_PYTHON=$env:AIUSE_YTDLP_PYTHON"
+    $resolved = Try-YtDlpPython $env:AIUSE_YTDLP_PYTHON 'explicit Python'
+    if ($resolved) { return $resolved }
+  }
+
   if ($env:LOCALAPPDATA) {
     $verifiedPython = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'
-    if (Test-Path $verifiedPython) {
-      try {
-        $version = (& $verifiedPython -m yt_dlp --version 2>$null | Select-Object -First 1).Trim()
-        if ($LASTEXITCODE -eq 0 -and $version) {
-          Write-Host "Using verified Python 3.12 yt-dlp: $version"
-          return @($verifiedPython, '-m', 'yt_dlp')
-        }
-      } catch {}
-    }
+    Write-Host "LocalAppData Python candidate=$verifiedPython exists=$(Test-Path $verifiedPython)"
+    $resolved = Try-YtDlpPython $verifiedPython 'LocalAppData Python 3.12'
+    if ($resolved) { return $resolved }
   }
 
   $py = Get-Command py -ErrorAction SilentlyContinue
@@ -32,7 +45,7 @@ function Resolve-YtDlpCommand {
     try {
       $version = (& $py.Source -3.12 -m yt_dlp --version 2>$null | Select-Object -First 1).Trim()
       if ($LASTEXITCODE -eq 0 -and $version) {
-        Write-Host "Using yt-dlp via Python launcher: $version"
+        Write-Host "Using Python launcher yt-dlp: $version"
         return @($py.Source, '-3.12', '-m', 'yt_dlp')
       }
     } catch {}
@@ -40,13 +53,8 @@ function Resolve-YtDlpCommand {
 
   $python = Get-Command python -ErrorAction SilentlyContinue
   if ($python) {
-    try {
-      $version = (& $python.Source -m yt_dlp --version 2>$null | Select-Object -First 1).Trim()
-      if ($LASTEXITCODE -eq 0 -and $version) {
-        Write-Host "Using yt-dlp via python: $version"
-        return @($python.Source, '-m', 'yt_dlp')
-      }
-    } catch {}
+    $resolved = Try-YtDlpPython $python.Source 'PATH python'
+    if ($resolved) { return $resolved }
   }
 
   $cmd = Get-Command yt-dlp -ErrorAction SilentlyContinue
@@ -59,25 +67,21 @@ function Resolve-YtDlpCommand {
   throw @'
 yt-dlp was not found.
 Install it once with:
-  C:\Users\kaill\AppData\Local\Programs\Python\Python312\python.exe -m pip install -U "yt-dlp[default]"
+  python -m pip install -U "yt-dlp[default]"
 Then run this script again.
 '@
 }
 
 function Resolve-JsRuntimeArgs {
   $deno = Get-Command deno -ErrorAction SilentlyContinue
-  if ($deno) {
-    return @('--js-runtimes', 'deno')
-  }
+  if ($deno) { return @('--js-runtimes', 'deno') }
 
   $node = Get-Command node -ErrorAction SilentlyContinue
   if ($node) {
     try {
       $versionText = (& $node.Source --version).Trim()
       $major = [int](($versionText -replace '^v','').Split('.')[0])
-      if ($major -ge 22) {
-        return @('--js-runtimes', 'node')
-      }
+      if ($major -ge 22) { return @('--js-runtimes', 'node') }
     } catch {}
   }
 
@@ -92,14 +96,10 @@ Then open a new PowerShell and run this script again.
 function Invoke-YtDlp([string[]]$Prefix, [string[]]$YtArgs) {
   $exe = $Prefix[0]
   $allArgs = @()
-  if ($Prefix.Count -gt 1) {
-    $allArgs += $Prefix[1..($Prefix.Count - 1)]
-  }
+  if ($Prefix.Count -gt 1) { $allArgs += $Prefix[1..($Prefix.Count - 1)] }
   $allArgs += $YtArgs
   & $exe @allArgs
-  if ($LASTEXITCODE -ne 0) {
-    throw "yt-dlp failed with exit code $LASTEXITCODE"
-  }
+  if ($LASTEXITCODE -ne 0) { throw "yt-dlp failed with exit code $LASTEXITCODE" }
 }
 
 $prefix = Resolve-YtDlpCommand
