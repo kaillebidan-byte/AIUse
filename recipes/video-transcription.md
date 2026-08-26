@@ -22,7 +22,7 @@ Upstream: `kaveniohq/youtube-transcribe`
 - Codex / Claude向けAgent Skillも同梱。
 - transcription API key不要。
 
-## Known-good path
+## Known-good STT path
 
 2026-08-26にGitHub Actions上で実証済み。
 
@@ -46,7 +46,7 @@ Known fixture:
 - 出力文: `And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.`
 - Markdown / JSON / VTT生成までPASS。
 
-## YouTube acquisition boundary
+## YouTube acquisition boundary and local workaround
 
 2026-08-26実測では、GitHub-hosted Actions runnerからYouTube URLを `yt-dlp` で取得すると、
 
@@ -56,14 +56,40 @@ Known fixture:
 
 これはWhisper失敗ではなく **YouTube取得段階の実行環境/IP境界**。
 
-したがってGitHub Actions上で同じURLを何度も再試行しない。
+同日、ユーザーWindows PCのログイン済みVivaldiを使うlocal pathはPASSした。
 
-YouTube動画については次の順で扱う。
+Known-good acquisition:
+
+```text
+logged-in Vivaldi
+  ↓ --cookies-from-browser vivaldi
+Deno + EJS challenge solver
+  ↓
+yt-dlp local Windows execution
+  ↓
+full MP4 with video + audio
+```
+
+Test input:
+`https://www.youtube.com/watch?v=8C87qprkCpE`
+
+Probe result:
+
+```text
+Youtube 8C87qprkCpE 期間限定イベント「新年着せ替え2026」アニメイメージPV 26
+```
+
+Full MP4 download and user playback: video + audio PASS.
+
+YouTubeのcurrent compatibility detailsとhelperは `tools/browser-media-bridge/README.md` を参照する。
+
+したがってYouTube動画については次の順で扱う。
 
 1. ChatGPT/web側で十分な字幕・transcriptが取得できるならそれを使う。
-2. 実音声で検証が必要なら、動画/音声を別の利用可能な取得経路でローカルファイル化する。
+2. 実音声・実映像が必要なら、GitHub-hosted runnerで再試行せず `browser-media-bridge` を使ってユーザーPC上でlocal file化する。
 3. 取得済みlocal fileを `youtube-transcribe` に渡す。
-4. ユーザーPC上で実行する場合は upstreamのbrowser-auth optionも候補だが、対象browserでの動作はその環境で確認する。
+4. timingが必要なら `--timestamps` を付ける。
+5. 映像確認も必要なら `video-analysis.md` へ接続し、重要timestampだけframe抽出する。
 
 ## Local-video dependency
 
