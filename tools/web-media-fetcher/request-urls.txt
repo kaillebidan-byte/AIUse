@@ -1,1 +1,1 @@
-# Put one or more explicit public media URLs here for live smoke testing.
+https://external-preview.redd.it/im-having-way-too-much-fun-with-the-new-minimax-model-v0-OTlsamk1amJtNGhoMT4cLxpyuxBtGZ9tE5NU0tSKQEmlXv0uNhd1AVMnuLGB.png?auto=webp&crop=smart&format=pjpg&s=844bbc1c776bbbc476c315b5136f8a9559bc1a51&width=640
