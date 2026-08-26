@@ -1,0 +1,61 @@
+name: reddit-thread-reader-live
+
+on:
+  push:
+    paths:
+      - ".github/workflows/reddit-thread-reader-live.yml"
+      - "tools/reddit-thread-reader/**"
+  pull_request:
+    paths:
+      - ".github/workflows/reddit-thread-reader-live.yml"
+      - "tools/reddit-thread-reader/**"
+  workflow_dispatch:
+
+jobs:
+  live-read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install -r tools/reddit-thread-reader/requirements.txt
+      - name: Read requested Reddit threads
+        run: |
+          mkdir -p /tmp/reddit-threads
+          i=0
+          while IFS= read -r url; do
+            [ -z "$url" ] && continue
+            i=$((i+1))
+            echo "Reading $url"
+            python tools/reddit-thread-reader/reddit_thread_reader.py "$url" --json -o "/tmp/reddit-threads/thread_${i}.json"
+          done < tools/reddit-thread-reader/request-urls.txt
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          files=sorted(Path('/tmp/reddit-threads').glob('thread_*.json'))
+          assert files, 'no thread outputs'
+          summary=[]
+          for p in files:
+              d=json.loads(p.read_text(encoding='utf-8'))
+              assert d.get('title'), d
+              assert d.get('comment_count_parsed',0) > 0, d
+              summary.append({
+                  'file': p.name,
+                  'title': d.get('title'),
+                  'subreddit': d.get('subreddit'),
+                  'comment_count_parsed': d.get('comment_count_parsed'),
+                  'source_url': d.get('source_url'),
+              })
+          Path('/tmp/reddit-threads/manifest.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding='utf-8')
+          print(json.dumps(summary,ensure_ascii=False,indent=2))
+          PY
+      - name: Upload Reddit reader artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: reddit-thread-reader-live-output
+          path: /tmp/reddit-threads/
+          if-no-files-found: error
+          retention-days: 1
