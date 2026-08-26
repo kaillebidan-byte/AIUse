@@ -1,0 +1,44 @@
+name: smoke-x-post-resolver
+
+on:
+  push:
+    paths:
+      - ".github/workflows/smoke-x-post-resolver.yml"
+      - "tools/x-post-resolver/**"
+  workflow_dispatch:
+
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install -r tools/x-post-resolver/requirements.txt
+      - name: Resolve live Azur Lane official X post
+        run: |
+          python tools/x-post-resolver/x_post_resolver.py \
+            "https://x.com/azurlane_staff/status/2086709129742028826" \
+            --json -o /tmp/x-post.json
+          cat /tmp/x-post.json
+      - name: Assert normalized output
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('/tmp/x-post.json').read_text(encoding='utf-8'))
+          assert d['source'] == 'fxtwitter-v2', d
+          assert d['id'] == '2086709129742028826', d
+          assert d['author']['screen_name'] == 'azurlane_staff', d
+          assert d.get('text'), d
+          assert d.get('media'), d
+          assert any(m.get('url') for m in d['media']), d
+          print('SMOKE PASS')
+          print('author=', d['author']['screen_name'])
+          print('media_count=', len(d['media']))
+          for i,m in enumerate(d['media'],1):
+              print(f"media_{i}=", m.get('url'))
+          PY
