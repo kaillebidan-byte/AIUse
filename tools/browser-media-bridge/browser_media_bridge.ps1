@@ -36,12 +36,14 @@ Then run this script again.
 '@
 }
 
-function Invoke-YtDlp([string[]]$Prefix, [string[]]$Args) {
+function Invoke-YtDlp([string[]]$Prefix, [string[]]$YtArgs) {
   $exe = $Prefix[0]
-  $all = @()
-  if ($Prefix.Count -gt 1) { $all += $Prefix[1..($Prefix.Count - 1)] }
-  $all += $Args
-  & $exe @all
+  $allArgs = @()
+  if ($Prefix.Count -gt 1) {
+    $allArgs += $Prefix[1..($Prefix.Count - 1)]
+  }
+  $allArgs += $YtArgs
+  & $exe @allArgs
   if ($LASTEXITCODE -ne 0) {
     throw "yt-dlp failed with exit code $LASTEXITCODE"
   }
@@ -59,31 +61,31 @@ $common = @(
 
 switch ($Mode) {
   'probe' {
-    $args = @(
+    $ytArgs = @(
       '--cookies-from-browser', $Browser,
       '--no-playlist',
       '--simulate',
-      '--print', '%(extractor_key)s`t%(id)s`t%(title)s`t%(duration_string)s'
+      '--print', '%(extractor_key)s`t%(id)s`t%(title)s`t%(duration_string)s',
       $Url
     )
-    Invoke-YtDlp $prefix $args
+    Invoke-YtDlp $prefix $ytArgs
   }
   'audio' {
-    $args = $common + @(
+    $ytArgs = $common + @(
       '-f', 'bestaudio/best',
       '-o', (Join-Path $OutputDir '%(extractor_key)s_%(id)s.%(ext)s'),
       $Url
     )
-    Invoke-YtDlp $prefix $args
+    Invoke-YtDlp $prefix $ytArgs
   }
   'video' {
-    $args = $common + @(
+    $ytArgs = $common + @(
       '-f', 'bv*+ba/b',
       '--merge-output-format', 'mp4',
       '-o', (Join-Path $OutputDir '%(extractor_key)s_%(id)s.%(ext)s'),
       $Url
     )
-    Invoke-YtDlp $prefix $args
+    Invoke-YtDlp $prefix $ytArgs
   }
 }
 
