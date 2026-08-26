@@ -1,0 +1,68 @@
+name: video-transcription-live
+
+on:
+  push:
+    paths:
+      - ".github/workflows/video-transcription-live.yml"
+      - "tools/video-transcription-smoke/**"
+  pull_request:
+    paths:
+      - ".github/workflows/video-transcription-live.yml"
+      - "tools/video-transcription-smoke/**"
+  workflow_dispatch:
+
+jobs:
+  transcribe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install youtube-transcribe
+        run: python -m pip install kavenio-youtube-transcribe
+      - name: Doctor
+        run: youtube-transcribe doctor
+      - name: Transcribe requested video with local Whisper
+        run: |
+          URL=$(grep -v '^#' tools/video-transcription-smoke/request-url.txt | sed '/^$/d' | head -n1)
+          test -n "$URL"
+          mkdir -p /tmp/transcripts
+          youtube-transcribe "$URL" \
+            --output-dir /tmp/transcripts \
+            --model tiny \
+            --language ja \
+            --timestamps
+      - name: Assert transcript artifacts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          roots=[p for p in Path('/tmp/transcripts').iterdir() if p.is_dir()]
+          assert roots, 'no output folder'
+          root=roots[0]
+          md=root/'transcript.md'
+          js=root/'transcript.json'
+          vtt=root/'timestamps.vtt'
+          assert md.exists(), root
+          assert js.exists(), root
+          assert vtt.exists(), root
+          text=md.read_text(encoding='utf-8')
+          assert len(text) > 100, text
+          data=json.loads(js.read_text(encoding='utf-8'))
+          print('TRANSCRIPTION LIVE PASS')
+          print('output_dir=', root)
+          print('md_bytes=', md.stat().st_size)
+          print('json_bytes=', js.stat().st_size)
+          print('vtt_bytes=', vtt.stat().st_size)
+          print('--- transcript preview ---')
+          print(text[:3000])
+          PY
+      - name: Upload transcript artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-transcription-live-output
+          path: /tmp/transcripts/
+          if-no-files-found: error
+          retention-days: 1
