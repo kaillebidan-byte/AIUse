@@ -56,3 +56,10 @@ py x_post_resolver.py URL --gallery-dl --json
 - FxTwitter API v2のOpenAPIと`/2/status/{id}`実例を確認。
 - gallery-dlの`-J / --resolve-json`を現行docsで確認。
 - Python syntax check PASS。
+- GitHub Actions上で実ネットワークを使ったlive smoke PASS。
+  - Known input: `https://x.com/azurlane_staff/status/2086709129742028826`
+  - `source=fxtwitter-v2`
+  - author `azurlane_staff` / id / text を正しく取得。
+  - 原寸photo 2件を取得（2009x1331, 1812x2930）。
+  - FxTwitter mosaic JPEG / WebP も取得。
+  - live smoke workflow: `.github/workflows/smoke-x-post-resolver.yml`
