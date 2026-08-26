@@ -1,0 +1,2 @@
+# Temporary/configurable input for live transcription smoke tests.
+https://www.youtube.com/watch?v=8C87qprkCpE
