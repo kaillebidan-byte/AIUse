@@ -13,15 +13,26 @@ param(
 $ErrorActionPreference = 'Stop'
 
 function Resolve-YtDlpCommand {
-  # Prefer the Python 3.12 module. This is the path verified interactively on
-  # the user's Windows machine and avoids accidentally picking up a stale
-  # standalone yt-dlp.exe earlier on PATH.
+  # First use the exact Python installation verified interactively on this PC.
+  if ($env:LOCALAPPDATA) {
+    $verifiedPython = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'
+    if (Test-Path $verifiedPython) {
+      try {
+        $version = (& $verifiedPython -m yt_dlp --version 2>$null | Select-Object -First 1).Trim()
+        if ($LASTEXITCODE -eq 0 -and $version) {
+          Write-Host "Using verified Python 3.12 yt-dlp: $version"
+          return @($verifiedPython, '-m', 'yt_dlp')
+        }
+      } catch {}
+    }
+  }
+
   $py = Get-Command py -ErrorAction SilentlyContinue
   if ($py) {
     try {
       $version = (& $py.Source -3.12 -m yt_dlp --version 2>$null | Select-Object -First 1).Trim()
       if ($LASTEXITCODE -eq 0 -and $version) {
-        Write-Host "Using yt-dlp via Python 3.12: $version"
+        Write-Host "Using yt-dlp via Python launcher: $version"
         return @($py.Source, '-3.12', '-m', 'yt_dlp')
       }
     } catch {}
@@ -48,7 +59,7 @@ function Resolve-YtDlpCommand {
   throw @'
 yt-dlp was not found.
 Install it once with:
-  py -3.12 -m pip install -U "yt-dlp[default]"
+  C:\Users\kaill\AppData\Local\Programs\Python\Python312\python.exe -m pip install -U "yt-dlp[default]"
 Then run this script again.
 '@
 }
@@ -95,10 +106,6 @@ $prefix = Resolve-YtDlpCommand
 $jsRuntimeArgs = Resolve-JsRuntimeArgs
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
-# Current YouTube compatibility notes (2026-08):
-# - YouTube extraction requires an external JS runtime + EJS challenge solver.
-# - Logged-in default tv_downgraded client has a known "page needs to be reloaded" issue for some users.
-# Keep the workaround localized here instead of making callers remember it.
 $youtubeCompat = @(
   '--remote-components', 'ejs:github',
   '--extractor-args', 'youtube:player_client=default,web_embedded'
