@@ -1,0 +1,106 @@
+# futaba-thread-reader
+
+## Purpose
+
+`img.2chan.net` などのふたば☆ちゃんねる現行スレを取得し、広告・投稿フォームなどを除いて、LLMが読みやすいMarkdownまたはJSONへ整形する補助ツール。
+
+ChatGPT側からスレURLを直接取得できる場合もあるため、主用途は **直接取得が失敗した場合のフォールバック**、または **レス構造を安定した形式へ正規化したい場合**。
+
+## When to use
+
+- `https://img.2chan.net/<board>/res/<thread>.htm` の本文を読みたい。
+- 通常のWeb取得でページを読めない、または取得結果が不安定。
+- レス番号、本文、時刻、そうだね数、添付画像URLを機械処理したい。
+
+## Inputs / Outputs
+
+Input:
+
+- `2chan.net` 配下のスレURL (`.../<board>/res/<number>.htm`)
+
+Output:
+
+- デフォルト: UTF-8 Markdown
+- `--json`: JSON
+
+抽出対象:
+
+- thread number
+- post number
+- timestamp
+- そうだね数
+- 消滅予定時刻（ページに存在する場合）
+- subject（存在する場合）
+- 本文
+- 添付画像URL / filename
+
+## Install
+
+Windows:
+
+```powershell
+py -m pip install -r requirements.txt
+```
+
+## Usage
+
+Markdownを標準出力:
+
+```powershell
+py futaba_img_reader.py "https://img.2chan.net/b/res/1462301292.htm"
+```
+
+ファイル保存:
+
+```powershell
+py futaba_img_reader.py "https://img.2chan.net/b/res/1462301292.htm" -o thread.md
+```
+
+JSON:
+
+```powershell
+py futaba_img_reader.py "https://img.2chan.net/b/res/1462301292.htm" --json
+```
+
+ローカルHTTP relay:
+
+```powershell
+py futaba_img_reader.py --serve 8765
+```
+
+```text
+http://127.0.0.1:8765/read?url=<percent-encoded-thread-url>
+```
+
+`?format=json` を付けるとJSONを返す。
+
+## Access boundary
+
+`--serve` は `127.0.0.1` のみで待ち受ける。ChatGPTの実行環境から、ユーザーPC上の `localhost` へ直接アクセスすることはできない。
+
+外部から読み取らせる必要がある場合は、ユーザー側で管理するHTTPS tunnel等の背後に置く必要がある。ただし通常は、まずChatGPT自身のWeb取得を試し、それで不足した場合だけこのツールを使うほうが軽い。
+
+## Parser notes
+
+ふたば系HTMLの `blockquote` を本文の主アンカーとし、周辺の `No.<number>` から投稿を対応付ける。`No.1462301292そうだねx10` のように空白なしで連結された表示にも対応する。
+
+文字コードはHTTP指定を優先し、必要に応じてCP932 / Shift_JIS / UTF-8をフォールバックする。
+
+## Limitations
+
+- スレ削除後の復元機能ではない。404になったスレは取得できない。
+- ふたば側のHTML構造が大きく変更された場合はparser更新が必要。
+- JavaScript実行を必要とする処理は行わない。
+- 認証、Cookie維持、投稿機能は持たない。読み取り専用。
+
+## Verification
+
+Last verified: **2026-08-26**
+
+確認範囲:
+
+- `img.2chan.net/b/res/...htm` の現行スレHTML構造
+- Python syntax check
+- Markdown / JSON出力経路
+
+ネットワーク実行環境によっては取得可否が変わるため、実スレへのHTTP到達性は利用環境側でも確認すること。
