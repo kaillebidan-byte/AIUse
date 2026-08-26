@@ -1,0 +1,1 @@
+# Put one direct public video URL here for live smoke testing.
