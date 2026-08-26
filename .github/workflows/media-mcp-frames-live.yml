@@ -24,10 +24,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-      - name: Install published media-mcp
+      - name: Build media-mcp from upstream source
         run: |
-          npm init -y >/dev/null 2>&1
-          npm install media-mcp@1.2.0
+          git clone --depth 1 https://github.com/woosal1337/media-mcp.git /tmp/media-mcp
+          cd /tmp/media-mcp
+          npm ci
+          npm run build
       - name: Extract frames at requested timestamps
         env:
           MEDIA_MCP_CACHE_DIR: /tmp/media-mcp-cache
@@ -36,7 +38,7 @@ jobs:
           node --input-type=module <<'JS'
           import fs from 'node:fs';
           import path from 'node:path';
-          import { extractFramesAtTimestamps } from './node_modules/media-mcp/dist/frames.js';
+          const { extractFramesAtTimestamps } = await import('file:///tmp/media-mcp/dist/frames.js');
 
           const url = fs.readFileSync('tools/media-mcp-frames-smoke/request-url.txt', 'utf8')
             .split(/\r?\n/).map(x => x.trim()).find(x => x && !x.startsWith('#'));
@@ -54,7 +56,7 @@ jobs:
           }
           const manifest = {
             source_url: url,
-            media_mcp_version: '1.2.0',
+            media_mcp_source: 'woosal1337/media-mcp@main',
             video_duration_s: result.videoDuration,
             from_cache: result.fromCache,
             frames: copied,
