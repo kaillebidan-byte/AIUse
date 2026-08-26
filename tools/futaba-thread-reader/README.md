@@ -6,11 +6,15 @@
 
 ChatGPT側からスレURLを直接取得できる場合もあるため、主用途は **直接取得が失敗した場合のフォールバック**、または **レス構造を安定した形式へ正規化したい場合**。
 
+消滅済みスレやURL不明の過去スレ探索はこのtoolの担当外。`recipes/futaba-archive-research.md` を使い、過去ログ検索で候補を発見してarchive本文を直接確認する。
+
 ## When to use
 
 - `https://img.2chan.net/<board>/res/<thread>.htm` の本文を読みたい。
 - 通常のWeb取得でページを読めない、または取得結果が不安定。
 - レス番号、本文、時刻、そうだね数、添付画像URLを機械処理したい。
+
+過去ログを探したい場合はこのreaderから始めず、`recipes/futaba-archive-research.md` へrouteする。
 
 ## Inputs / Outputs
 
@@ -102,6 +106,7 @@ GitHub Actionsで実ネットワーク込みの確認をしたい場合:
 ## Limitations
 
 - スレ削除後の復元機能ではない。404になったスレは取得できない。
+- 過去ログの検索・発見機能は持たない。一般検索で見つからない過去スレは `recipes/futaba-archive-research.md` で別経路を使う。
 - ふたば側のHTML構造が大きく変更された場合はparser更新が必要。
 - JavaScript実行を必要とする処理は行わない。
 - 認証、Cookie維持、投稿機能は持たない。読み取り専用。
