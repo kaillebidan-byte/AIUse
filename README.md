@@ -23,9 +23,12 @@ AI / assistant workflows用の小さな補助ツールと定型作業recipeの�
 | 「Xから画像探して」「Xの画像を本文に載せて/貼って/見せて」「最近の公式絵を持ってきて」 | [x-image-research](recipes/x-image-research.md) | **実画像が最終回答本文で描画されるまで**。post URLやmedia URLだけでは未完了 |
 | 「動画を文字起こし/要約」「動画内の発話を確認」 | [video-transcription](recipes/video-transcription.md) | download経路とSTTを分離し、必要なら実音声→transcript/timestampsまで取得 |
 | 「動画を見て」「映像・キャラ動作・画面変化を確認」 | [video-analysis](recipes/video-analysis.md) | 必要timestampを実frame化し、**assistant visionで実画像を確認するまで** |
-| ふたば/X/Reddit/GitHub等をまたいだ実例調査 | [source-deep-dive](recipes/source-deep-dive.md) | sourceを横断して結論を変える材料まで確認 |
+| 「ふたばの過去スレも探して」「img/mayの過去ログを掘って」「前にこの話してなかった？」 | [futaba-archive-research](recipes/futaba-archive-research.md) | 一般検索0件で不存在判定せず、過去ログ検索→候補発見→archive本文確認まで |
+| ふたば/X/Reddit/GitHub等をまたいだ実例調査 | [source-deep-dive](recipes/source-deep-dive.md) | sourceを横断して結論を変える材料まで確認。ふたば過去ログが関係する場合はarchive recipeも併用 |
 
 特にX画像提示では、外部 `pbs.twimg.com` URLをMarkdown画像にしただけではChatGPT UI上で表示されないことがある。`recipes/x-image-research.md` のknown-good transport pathとfailure ledgerを参照し、同じ失敗探索を繰り返さない。
+
+ふたば過去ログ探索では、一般検索engineにindexされていないスレがある。Google/Bing等で0件でも不存在とは扱わず、`recipes/futaba-archive-research.md` に従ってFutafuta等の過去ログ検索から候補を発見し、`kako.futakuro.com` 等で取得できるarchive本文まで確認する。現行スレ取得用の `tools/futaba-thread-reader/` と、消滅済みスレの発見は別問題として扱う。
 
 Reddit調査では、2026-08-26時点でGitHub Actions runnerからpublic HTML / per-thread RSSの両方が403になった実測がある。ChatGPTのweb経路で元threadをopenできる場合はそちらを第一経路にし、Actions経由readerで同じ403を再探索しない。詳細は `recipes/reddit-research.md`。
 
@@ -75,6 +78,7 @@ AIUse/
 | [x-image-research](recipes/x-image-research.md) | Xの元post特定→本文/media確認→**ChatGPT本文内の実画像表示**まで進める |
 | [video-transcription](recipes/video-transcription.md) | 動画取得経路とSTTを分離し、発話をtranscript/timestampsへ変換する |
 | [video-analysis](recipes/video-analysis.md) | 必要timestampだけframe抽出し、映像をassistant visionで実確認する |
+| [futaba-archive-research](recipes/futaba-archive-research.md) | ふたばの消滅済み/URL不明スレを過去ログ検索で発見し、archive本文まで確認する |
 | [source-deep-dive](recipes/source-deep-dive.md) | ふたば/X/Reddit/GitHub等を横断して実例を深掘り |
 
 ## Rules for future tools
