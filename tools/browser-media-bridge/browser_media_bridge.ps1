@@ -12,55 +12,36 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-function Try-YtDlpPython([string]$PythonPath, [string]$Label) {
-  if (-not $PythonPath -or -not (Test-Path $PythonPath)) { return $null }
-  try {
-    $version = (& $PythonPath -m yt_dlp --version 2>$null | Select-Object -First 1).Trim()
-    if ($LASTEXITCODE -eq 0 -and $version) {
-      Write-Host "Using $Label yt-dlp: $version"
-      return @($PythonPath, '-m', 'yt_dlp')
-    }
-  } catch {
-    Write-Host "$Label yt-dlp probe failed: $($_.Exception.Message)"
-  }
-  return $null
-}
-
 function Resolve-YtDlpCommand {
-  if ($env:AIUSE_YTDLP_PYTHON) {
-    Write-Host "AIUSE_YTDLP_PYTHON=$env:AIUSE_YTDLP_PYTHON"
-    $resolved = Try-YtDlpPython $env:AIUSE_YTDLP_PYTHON 'explicit Python'
-    if ($resolved) { return $resolved }
+  # When the control runner supplies the verified Python executable, use it
+  # directly. Do not pre-probe and silently fall back to an older standalone
+  # yt-dlp; the actual yt-dlp invocation will surface any real module error.
+  if ($env:AIUSE_YTDLP_PYTHON -and (Test-Path $env:AIUSE_YTDLP_PYTHON)) {
+    Write-Host "Using explicit Python yt-dlp: $env:AIUSE_YTDLP_PYTHON"
+    return @($env:AIUSE_YTDLP_PYTHON, '-m', 'yt_dlp')
   }
 
   if ($env:LOCALAPPDATA) {
     $verifiedPython = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'
-    Write-Host "LocalAppData Python candidate=$verifiedPython exists=$(Test-Path $verifiedPython)"
-    $resolved = Try-YtDlpPython $verifiedPython 'LocalAppData Python 3.12'
-    if ($resolved) { return $resolved }
+    if (Test-Path $verifiedPython) {
+      Write-Host "Using LocalAppData Python yt-dlp: $verifiedPython"
+      return @($verifiedPython, '-m', 'yt_dlp')
+    }
   }
 
   $py = Get-Command py -ErrorAction SilentlyContinue
   if ($py) {
-    try {
-      $version = (& $py.Source -3.12 -m yt_dlp --version 2>$null | Select-Object -First 1).Trim()
-      if ($LASTEXITCODE -eq 0 -and $version) {
-        Write-Host "Using Python launcher yt-dlp: $version"
-        return @($py.Source, '-3.12', '-m', 'yt_dlp')
-      }
-    } catch {}
+    return @($py.Source, '-3.12', '-m', 'yt_dlp')
   }
 
   $python = Get-Command python -ErrorAction SilentlyContinue
   if ($python) {
-    $resolved = Try-YtDlpPython $python.Source 'PATH python'
-    if ($resolved) { return $resolved }
+    return @($python.Source, '-m', 'yt_dlp')
   }
 
   $cmd = Get-Command yt-dlp -ErrorAction SilentlyContinue
   if ($cmd) {
-    $version = (& $cmd.Source --version 2>$null | Select-Object -First 1).Trim()
-    Write-Host "Using standalone yt-dlp: $version"
+    Write-Host "Using standalone yt-dlp: $($cmd.Source)"
     return @($cmd.Source)
   }
 
@@ -102,7 +83,7 @@ function Invoke-YtDlp([string[]]$Prefix, [string[]]$YtArgs) {
   if ($LASTEXITCODE -ne 0) { throw "yt-dlp failed with exit code $LASTEXITCODE" }
 }
 
-$prefix = Resolve-YtDlpCommand
+$prefix = @(Resolve-YtDlpCommand)
 $jsRuntimeArgs = Resolve-JsRuntimeArgs
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
