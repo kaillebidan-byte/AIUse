@@ -10,6 +10,7 @@ AI / assistant workflows用の小さな補助ツールと定型作業recipeの�
 
 - URLやmediaを機械的に取得・変換するなら `tools/<name>/README.md`
 - 「Reddit調査」「X画像調査」「動画文字起こし/映像分析」のような定型依頼なら `recipes/<name>.md`
+- 新しい共通downstream出力を作る場合は [`schemas/result-envelope-v1.md`](schemas/result-envelope-v1.md) を確認する。
 - 必要がない限りリポジトリ全体を走査しない。
 
 ## Task routing — check before answering
@@ -38,6 +39,8 @@ Reddit調査では、2026-08-26時点でGitHub Actions runnerからpublic HTML /
 AIUse/
 ├─ README.md
 ├─ .gitignore
+├─ schemas/
+│  └─ result-envelope-v1.md
 ├─ tools/
 │  └─ <tool-name>/
 │     ├─ README.md
@@ -58,6 +61,7 @@ AIUse/
 | [x-post-resolver](tools/x-post-resolver/README.md) | X/Twitter post本文・作者・添付mediaを正規化 | `x_post_resolver.py` | usable | 2026-08-26 |
 | [reddit-thread-reader](tools/reddit-thread-reader/README.md) | 公開Reddit threadのOP/commentをHTMLから正規化 | `reddit_thread_reader.py` | environment-sensitive; ChatGPT web preferred | 2026-08-26 |
 | [web-media-fetcher](tools/web-media-fetcher/README.md) | 直接media URLをローカルファイルへ保存 | `web_media_fetcher.py` | usable | 2026-08-26 |
+| [media-inspector](tools/media-inspector/README.md) | 既存helperを束ね、media metadata / transcript /代表frameをresult-envelope v1へまとめる | `media_inspector.py` | metadata smoke PASS; combined E2E pending | 2026-08-26 |
 
 検証harness:
 - `tools/video-transcription-smoke/` — 既存 `kavenio-youtube-transcribe` のSTT検証。独自wrapperではない。
@@ -92,6 +96,7 @@ AIUse/
 - 個人情報や会話ログそのものではなく、再利用可能な道具だけを置く。
 - 既存ツールで足りる場合は新規作成せず、既存ツールを更新する。
 - 新しい取得方式を作る前に既存実装・現行仕様を確認し、薄いwrapperを優先する。
+- 新しいcross-source/downstream toolで共通JSONが必要なら `result-envelope v1` を使う。既存readerは、そのreaderを別件で触るまでschema移行だけを目的に改修しない。
 
 ## Rules for recipes
 
