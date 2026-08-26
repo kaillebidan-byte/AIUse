@@ -22,9 +22,7 @@ Upstream: `kaveniohq/youtube-transcribe`
 - Codex / Claude向けAgent Skillも同梱。
 - transcription API key不要。
 
-## Known-good STT paths
-
-### Offline fixture
+## Known-good STT path
 
 2026-08-26にGitHub Actions上で実証済み。
 
@@ -48,32 +46,23 @@ Known fixture:
 - 出力文: `And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.`
 - Markdown / JSON / VTT生成までPASS。
 
-### User Windows Japanese live test
+## Japanese live STT result
 
-2026-08-26、ユーザーWindows PC上でYouTubeから取得済みのAzur Lane dialogue video `pieNwBlb_Ek.mp4` をlocal inputとして実行。
+2026-08-26にユーザーWindows PCで、YouTubeからlocal取得したAzur Lane天城の日本語台詞集を `faster-whisper base`, language=`ja`, `--timestamps` で処理。
 
-```text
-local MP4 (Japanese dialogue)
-  ↓
-kavenio-youtube-transcribe
-  ↓
-faster-whisper base, language=ja
-  ↓
-transcript.md
-transcript.json
-timestamps.vtt
-```
+Result:
+- local MP4 audio extraction: PASS
+- Whisper base model download: PASS after Windows symlink workaround
+- speech-to-text: PASS
+- `transcript.md`: PASS
+- `transcript.json`: PASS
+- `timestamps.vtt`: PASS
 
-実測:
-- `[extract] Local video audio`: PASS
-- Whisper `base` model download/load: PASS after Windows symlink workaround
-- `[transcribe] Speech to text`: 100% PASS
-- `[write] Agent-ready artifacts`: PASS
-- `transcript.md`: generated
-- `transcript.json`: generated
-- `timestamps.vtt`: generated
-
-この時点ではartifact生成とSTT pipeline成立を確認済み。文字列精度の評価は `transcript.md` 本文を実際に読んで別途判定する。
+Quality observation:
+- 内容の大筋・発話位置の把握には使える。
+- 固有名詞、艦船用語、漢字変換はかなり崩れる。例: `天城`→`甘ぎ`、`巡洋戦艦`→`ジュンヨーセンカン`、`赤城`→`赤ギ`、`空母に改装`→`クーボに解創`、`指揮官様`→`シキガン様`。
+- よって `base` は timestamp locator / rough semantic index としてはusableだが、正確な引用・固有名詞検索・台詞正本にはそのまま使わない。
+- 正確な文面が必要な場合は platform字幕 / 公式・wiki等の既存台詞表を優先し、Whisper timestampと突き合わせる。音声しか無い場合は `small` 以上との比較を検討する。
 
 ## YouTube acquisition boundary and local workaround
 
@@ -126,15 +115,15 @@ YouTubeのcurrent compatibility detailsとhelperは `tools/browser-media-bridge/
 
 これはSTT・GPU/CPU inference失敗ではなく、Windows symlink privilege境界。CLIが表示する `--device cpu --compute-type int8` hintでは解決しない。
 
-管理者実行やWindows Developer Modeを要求する前に次を優先する:
+現行 `huggingface_hub` では、管理者実行やWindows Developer Modeを要求する前に次を優先する:
 
 ```powershell
 $env:HF_HUB_DISABLE_SYMLINKS="1"
 ```
 
-ユーザーPC実測では、この設定後に同じ `base` model / Japanese local videoを再実行し、model load → transcription 100% → Markdown/JSON/VTT生成までPASSした。
+これでcacheはsymlinkを作らずsnapshotへ実ファイルを置く。代償はrevision間の重複でディスク使用量が増えること。`HF_HUB_DISABLE_SYMLINKS_WARNING=1` は警告を隠すだけなので、この失敗の回避としては使わない。
 
-`HF_HUB_DISABLE_SYMLINKS_WARNING=1` は警告を隠すだけなので、この失敗の回避としては使わない。環境変数は `huggingface_hub` import前に設定する。再試行してもpartial cacheで失敗する場合だけ対象model cacheを消して再取得する。
+環境変数は `huggingface_hub` import前に設定してから `youtube-transcribe` を再実行する。再試行してもpartial cacheで失敗する場合だけ対象model cacheを消して再取得する。
 
 ## Local-video dependency
 
@@ -150,7 +139,6 @@ GitHub Actionsの今回のrunnerにはFFmpegが初期状態で入っていなか
 - requested contentを読める本文へ変換する。
 - timingが必要な依頼ではJSON/VTT等のtimestamp artifactまで取得する。
 - download失敗とspeech-to-text失敗を混同しない。
-- pipeline PASSだけで内容精度PASSとみなさない。実際のtranscript本文を確認する。
 
 ## Next extension
 
