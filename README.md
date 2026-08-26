@@ -18,11 +18,13 @@ AI / assistant workflows用の小さな補助ツールと定型作業recipeの�
 
 | User intent / trigger | Read first | Critical completion |
 | --- | --- | --- |
-| 「Reddit調べて」「Redditの反応・評判」 | [reddit-research](recipes/reddit-research.md) | relevant threadだけでなく必要なcommentまで確認 |
+| 「Reddit調べて」「Redditの反応・評判」 | [reddit-research](recipes/reddit-research.md) | relevant threadだけでなく必要なcommentまで確認。ChatGPTではweb open優先 |
 | 「Xから画像探して」「Xの画像を本文に載せて/貼って/見せて」「最近の公式絵を持ってきて」 | [x-image-research](recipes/x-image-research.md) | **実画像が最終回答本文で描画されるまで**。post URLやmedia URLだけでは未完了 |
 | ふたば/X/Reddit/GitHub等をまたいだ実例調査 | [source-deep-dive](recipes/source-deep-dive.md) | sourceを横断して結論を変える材料まで確認 |
 
 特にX画像提示では、外部 `pbs.twimg.com` URLをMarkdown画像にしただけではChatGPT UI上で表示されないことがある。`recipes/x-image-research.md` のknown-good transport pathとfailure ledgerを参照し、同じ失敗探索を繰り返さない。
+
+Reddit調査では、2026-08-26時点でGitHub Actions runnerからpublic HTML / per-thread RSSの両方が403になった実測がある。ChatGPTのweb経路で元threadをopenできる場合はそちらを第一経路にし、Actions経由readerで同じ403を再探索しない。詳細は `recipes/reddit-research.md`。
 
 ## Structure
 
@@ -48,7 +50,7 @@ AIUse/
 | --- | --- | --- | --- | --- |
 | [futaba-thread-reader](tools/futaba-thread-reader/README.md) | ふたば☆ちゃんねるの現行スレをLLM向けMarkdown / JSONへ整形 | `futaba_img_reader.py` | usable | 2026-08-26 |
 | [x-post-resolver](tools/x-post-resolver/README.md) | X/Twitter post本文・作者・添付mediaを正規化 | `x_post_resolver.py` | usable | 2026-08-26 |
-| [reddit-thread-reader](tools/reddit-thread-reader/README.md) | 公開Reddit threadのOP/commentをHTMLから正規化 | `reddit_thread_reader.py` | usable / HTML-dependent | 2026-08-26 |
+| [reddit-thread-reader](tools/reddit-thread-reader/README.md) | 公開Reddit threadのOP/commentをHTMLから正規化 | `reddit_thread_reader.py` | environment-sensitive; ChatGPT web preferred | 2026-08-26 |
 | [web-media-fetcher](tools/web-media-fetcher/README.md) | 直接media URLをローカルファイルへ保存 | `web_media_fetcher.py` | usable | 2026-08-26 |
 
 ## Recipe index
