@@ -91,6 +91,22 @@ YouTubeのcurrent compatibility detailsとhelperは `tools/browser-media-bridge/
 4. timingが必要なら `--timestamps` を付ける。
 5. 映像確認も必要なら `video-analysis.md` へ接続し、重要timestampだけframe抽出する。
 
+## Windows Hugging Face cache boundary
+
+2026-08-26のユーザーWindows PC実測で、初回 `faster-whisper base` model download後に Hugging Face cache がsnapshot symlinkを作ろうとして `WinError 1314`（要求された特権なし）で停止した。
+
+これはSTT・GPU/CPU inference失敗ではなく、Windows symlink privilege境界。CLIが表示する `--device cpu --compute-type int8` hintでは解決しない。
+
+現行 `huggingface_hub` では、管理者実行やWindows Developer Modeを要求する前に次を優先する:
+
+```powershell
+$env:HF_HUB_DISABLE_SYMLINKS="1"
+```
+
+これでcacheはsymlinkを作らずsnapshotへ実ファイルを置く。代償はrevision間の重複でディスク使用量が増えること。`HF_HUB_DISABLE_SYMLINKS_WARNING=1` は警告を隠すだけなので、この失敗の回避としては使わない。
+
+環境変数は `huggingface_hub` import前に設定してから `youtube-transcribe` を再実行する。再試行してもpartial cacheで失敗する場合だけ対象model cacheを消して再取得する。
+
 ## Local-video dependency
 
 local video入力ではFFmpegが必要。
