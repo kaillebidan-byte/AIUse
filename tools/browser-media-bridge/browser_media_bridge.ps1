@@ -13,25 +13,42 @@ param(
 $ErrorActionPreference = 'Stop'
 
 function Resolve-YtDlpCommand {
-  $cmd = Get-Command yt-dlp -ErrorAction SilentlyContinue
-  if ($cmd) {
-    return @($cmd.Source)
-  }
-
+  # Prefer the Python 3.12 module. This is the path verified interactively on
+  # the user's Windows machine and avoids accidentally picking up a stale
+  # standalone yt-dlp.exe earlier on PATH.
   $py = Get-Command py -ErrorAction SilentlyContinue
   if ($py) {
     try {
-      & $py.Source -m yt_dlp --version *> $null
-      if ($LASTEXITCODE -eq 0) {
-        return @($py.Source, '-m', 'yt_dlp')
+      $version = (& $py.Source -3.12 -m yt_dlp --version 2>$null | Select-Object -First 1).Trim()
+      if ($LASTEXITCODE -eq 0 -and $version) {
+        Write-Host "Using yt-dlp via Python 3.12: $version"
+        return @($py.Source, '-3.12', '-m', 'yt_dlp')
       }
     } catch {}
+  }
+
+  $python = Get-Command python -ErrorAction SilentlyContinue
+  if ($python) {
+    try {
+      $version = (& $python.Source -m yt_dlp --version 2>$null | Select-Object -First 1).Trim()
+      if ($LASTEXITCODE -eq 0 -and $version) {
+        Write-Host "Using yt-dlp via python: $version"
+        return @($python.Source, '-m', 'yt_dlp')
+      }
+    } catch {}
+  }
+
+  $cmd = Get-Command yt-dlp -ErrorAction SilentlyContinue
+  if ($cmd) {
+    $version = (& $cmd.Source --version 2>$null | Select-Object -First 1).Trim()
+    Write-Host "Using standalone yt-dlp: $version"
+    return @($cmd.Source)
   }
 
   throw @'
 yt-dlp was not found.
 Install it once with:
-  py -m pip install -U "yt-dlp[default]"
+  py -3.12 -m pip install -U "yt-dlp[default]"
 Then run this script again.
 '@
 }
