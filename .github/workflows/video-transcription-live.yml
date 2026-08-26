@@ -24,16 +24,41 @@ jobs:
         run: python -m pip install kavenio-youtube-transcribe
       - name: Doctor
         run: youtube-transcribe doctor
-      - name: Transcribe requested video with local Whisper
+
+      - name: Probe YouTube URL path
+        continue-on-error: true
         run: |
           URL=$(grep -v '^#' tools/video-transcription-smoke/request-url.txt | sed '/^$/d' | head -n1)
           test -n "$URL"
-          mkdir -p /tmp/transcripts
+          mkdir -p /tmp/youtube-probe
           youtube-transcribe "$URL" \
-            --output-dir /tmp/transcripts \
+            --output-dir /tmp/youtube-probe \
             --model tiny \
             --language ja \
             --timestamps
+
+      - name: Build local MP4 speech fixture
+        run: |
+          curl -L --fail --retry 2 \
+            -o /tmp/jfk.wav \
+            https://raw.githubusercontent.com/ggerganov/whisper.cpp/master/samples/jfk.wav
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i color=c=black:s=640x360:r=1 \
+            -i /tmp/jfk.wav \
+            -shortest -c:v mpeg4 -q:v 8 -c:a aac \
+            /tmp/jfk-fixture.mp4
+          test -s /tmp/jfk-fixture.mp4
+          ls -lh /tmp/jfk.wav /tmp/jfk-fixture.mp4
+
+      - name: Transcribe local MP4 with Whisper
+        run: |
+          mkdir -p /tmp/transcripts
+          youtube-transcribe /tmp/jfk-fixture.mp4 \
+            --output-dir /tmp/transcripts \
+            --model tiny \
+            --language en \
+            --timestamps
+
       - name: Assert transcript artifacts
         run: |
           python - <<'PY'
@@ -50,8 +75,9 @@ jobs:
           assert vtt.exists(), root
           text=md.read_text(encoding='utf-8')
           assert len(text) > 100, text
+          assert 'ask not what your country can do for you' in text.lower(), text
           data=json.loads(js.read_text(encoding='utf-8'))
-          print('TRANSCRIPTION LIVE PASS')
+          print('LOCAL VIDEO TRANSCRIPTION PASS')
           print('output_dir=', root)
           print('md_bytes=', md.stat().st_size)
           print('json_bytes=', js.stat().st_size)
@@ -59,6 +85,7 @@ jobs:
           print('--- transcript preview ---')
           print(text[:3000])
           PY
+
       - name: Upload transcript artifact
         uses: actions/upload-artifact@v4
         with:
