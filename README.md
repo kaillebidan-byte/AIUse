@@ -1,24 +1,31 @@
 # AIUse
 
-AI / assistant workflows用の小さな補助ツール置き場。
+AI / assistant workflows用の小さな補助ツールと定型作業recipeの置き場。
 
 このリポジトリは、特定の作業で必要になった取得・変換・検査などを、後のセッションでも再利用できる形で保存するために使う。
 
 ## Future assistant entrypoint
 
-後からこのリポジトリを使う場合は、まずこのREADMEの **Tool index** を確認し、目的に合う `tools/<name>/README.md` だけ読む。必要がない限りリポジトリ全体を走査しない。
+後からこのリポジトリを使う場合は、まずこのREADMEの **Tool index / Recipe index** を確認する。
+
+- URLやmediaを機械的に取得・変換するなら `tools/<name>/README.md`
+- 「Reddit調査」「X画像調査」のような定型依頼なら `recipes/<name>.md`
+- 必要がない限りリポジトリ全体を走査しない。
 
 ## Structure
 
 ```text
 AIUse/
-├─ README.md                  # 全体索引・運用規則
+├─ README.md
 ├─ .gitignore
-└─ tools/
-   └─ <tool-name>/
-      ├─ README.md            # 目的、使用条件、入出力、制約、検証日
-      ├─ requirements.txt     # Python依存がある場合
-      └─ <entrypoint>         # 実行本体
+├─ tools/
+│  └─ <tool-name>/
+│     ├─ README.md
+│     ├─ requirements.txt
+│     └─ <entrypoint>
+└─ recipes/
+   ├─ README.md
+   └─ <workflow>.md
 ```
 
 ツールは用途単位で自己完結させる。日付や会話単位では分けず、同じ目的の改善は同じディレクトリへ積む。
@@ -28,6 +35,17 @@ AIUse/
 | Tool | Purpose | Entrypoint | Status | Last verified |
 | --- | --- | --- | --- | --- |
 | [futaba-thread-reader](tools/futaba-thread-reader/README.md) | ふたば☆ちゃんねるの現行スレをLLM向けMarkdown / JSONへ整形 | `futaba_img_reader.py` | usable | 2026-08-26 |
+| [x-post-resolver](tools/x-post-resolver/README.md) | X/Twitter post本文・作者・添付mediaを正規化 | `x_post_resolver.py` | usable | 2026-08-26 |
+| [reddit-thread-reader](tools/reddit-thread-reader/README.md) | 公開Reddit threadのOP/commentをHTMLから正規化 | `reddit_thread_reader.py` | usable / HTML-dependent | 2026-08-26 |
+| [web-media-fetcher](tools/web-media-fetcher/README.md) | 直接media URLをローカルファイルへ保存 | `web_media_fetcher.py` | usable | 2026-08-26 |
+
+## Recipe index
+
+| Recipe | Purpose |
+| --- | --- |
+| [reddit-research](recipes/reddit-research.md) | Redditの評判・体験談・commentまで確認する調査 |
+| [x-image-research](recipes/x-image-research.md) | Xの元post特定→本文/media確認→画像提示まで進める |
+| [source-deep-dive](recipes/source-deep-dive.md) | ふたば/X/Reddit/GitHub等を横断して実例を深掘り |
 
 ## Rules for future tools
 
@@ -48,3 +66,12 @@ AIUse/
 - 一時出力、キャッシュ、認証情報、Cookie、秘密鍵はコミットしない。
 - 個人情報や会話ログそのものではなく、再利用可能な道具だけを置く。
 - 既存ツールで足りる場合は新規作成せず、既存ツールを更新する。
+- 新しい取得方式を作る前に既存実装・現行仕様を確認し、薄いwrapperを優先する。
+
+## Rules for recipes
+
+recipeはコードではなく、未来のassistantが定型依頼を最後まで完了するためのチェックリスト。
+
+- tool名を固定で参照しすぎず、通常web取得で足りる場合はそちらを優先する。
+- 「検索した」で止めず、依頼の成果物（本文確認、comment精読、画像提示など）をCompletionに書く。
+- source仕様が変わったらtoolだけでなく該当recipeも見直す。
