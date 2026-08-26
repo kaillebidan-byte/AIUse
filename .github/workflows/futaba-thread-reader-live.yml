@@ -1,0 +1,47 @@
+name: futaba-thread-reader-live
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/futaba-thread-reader-live.yml"
+      - "tools/futaba-thread-reader/**"
+  workflow_dispatch:
+
+jobs:
+  live-read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install -r tools/futaba-thread-reader/requirements.txt
+      - name: Read requested Futaba thread
+        run: |
+          URL=$(grep -v '^#' tools/futaba-thread-reader/request-url.txt | sed '/^$/d' | head -n1)
+          test -n "$URL"
+          python tools/futaba-thread-reader/futaba_img_reader.py "$URL" --json -o /tmp/futaba-thread.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('/tmp/futaba-thread.json').read_text(encoding='utf-8'))
+          assert d.get('thread_no'), d
+          assert d.get('post_count',0) > 0, d
+          assert d.get('posts'), d
+          assert d['posts'][0].get('text'), d
+          print('FUTABA LIVE PASS')
+          print('thread_no=', d['thread_no'])
+          print('post_count=', d['post_count'])
+          print('image_posts=', sum(1 for p in d['posts'] if p.get('image_url')))
+          print('first_no=', d['posts'][0].get('no'))
+          print('first_text=', (d['posts'][0].get('text') or '')[:300])
+          PY
+      - name: Upload Futaba output
+        uses: actions/upload-artifact@v4
+        with:
+          name: futaba-thread-reader-live-output
+          path: /tmp/futaba-thread.json
+          if-no-files-found: error
+          retention-days: 1
