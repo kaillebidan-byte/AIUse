@@ -31,8 +31,33 @@ function Resolve-YtDlpCommand {
   throw @'
 yt-dlp was not found.
 Install it once with:
-  py -m pip install -U yt-dlp
+  py -m pip install -U "yt-dlp[default]"
 Then run this script again.
+'@
+}
+
+function Resolve-JsRuntimeArgs {
+  $deno = Get-Command deno -ErrorAction SilentlyContinue
+  if ($deno) {
+    return @('--js-runtimes', 'deno')
+  }
+
+  $node = Get-Command node -ErrorAction SilentlyContinue
+  if ($node) {
+    try {
+      $versionText = (& $node.Source --version).Trim()
+      $major = [int](($versionText -replace '^v','').Split('.')[0])
+      if ($major -ge 22) {
+        return @('--js-runtimes', 'node')
+      }
+    } catch {}
+  }
+
+  throw @'
+No supported JavaScript runtime was found for current YouTube challenges.
+Recommended Windows install:
+  winget install --id=DenoLand.Deno
+Then open a new PowerShell and run this script again.
 '@
 }
 
@@ -50,9 +75,19 @@ function Invoke-YtDlp([string[]]$Prefix, [string[]]$YtArgs) {
 }
 
 $prefix = Resolve-YtDlpCommand
+$jsRuntimeArgs = Resolve-JsRuntimeArgs
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
-$common = @(
+# Current YouTube compatibility notes (2026-08):
+# - YouTube extraction requires an external JS runtime + EJS challenge solver.
+# - Logged-in default tv_downgraded client has a known "page needs to be reloaded" issue for some users.
+# Keep the workaround localized here instead of making callers remember it.
+$youtubeCompat = @(
+  '--remote-components', 'ejs:github',
+  '--extractor-args', 'youtube:player_client=default,web_embedded'
+) + $jsRuntimeArgs
+
+$common = $youtubeCompat + @(
   '--cookies-from-browser', $Browser,
   '--no-playlist',
   '--windows-filenames',
@@ -61,7 +96,7 @@ $common = @(
 
 switch ($Mode) {
   'probe' {
-    $ytArgs = @(
+    $ytArgs = $youtubeCompat + @(
       '--cookies-from-browser', $Browser,
       '--no-playlist',
       '--simulate',
