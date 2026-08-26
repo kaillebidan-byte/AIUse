@@ -10,9 +10,12 @@ toolが**取得・変換の実装**、recipeが**作業完了条件と失敗済�
 | --- | --- | --- |
 | [reddit-research.md](reddit-research.md) | Redditを調べる、評判・体験談・雑談を拾う | 検索結果タイトルだけ |
 | [x-image-research.md](x-image-research.md) | Xで画像を探し、投稿・画像を本文提示する | post URL / media URL / 外部URL Markdownだけ |
-| [video-transcription.md](video-transcription.md) | 動画を見る、要約する、文字起こしする、発話を解析する | 動画URL取得だけ / download失敗をSTT失敗扱い |
+| [video-transcription.md](video-transcription.md) | 動画の発話を文字起こし・要約・timestamp化する | 動画URL取得だけ / download失敗をSTT失敗扱い |
+| [video-analysis.md](video-analysis.md) | 動画の映像・キャラ動作・UI変化を実frameで見る | frame path / extraction成功だけ |
 | [source-deep-dive.md](source-deep-dive.md) | ふたば/X/Reddit等を横断して過去事例を深掘りする | 最初に見つけた1 sourceだけ |
 
 未来のassistantは、依頼がこのパターンに一致する場合、**回答を作り始める前に該当recipeを読む**。各recipeの `Completion` と `Failure ledger` が、通常の「取得できた」というtool成功より優先される。
 
 特に「本文に載せて」「貼って」「見せて」のようにUI表示そのものが要求される場合、URL取得は中間成果でしかない。最終回答上で実際に描画された状態を完成条件とする。
+
+動画分析では同様に、frame抽出ツールがpathを返しただけでは未完了。必要なframeをChatGPT側へ搬送し、assistant visionで実際に内容を確認する。
