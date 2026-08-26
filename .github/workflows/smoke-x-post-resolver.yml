@@ -38,11 +38,46 @@ jobs:
           assert d['id'] == '2086709129742028826', d
           assert d['author']['screen_name'] == 'azurlane_staff', d
           assert d.get('text'), d
-          assert d.get('media'), d
-          assert any(m.get('url') for m in d['media']), d
+          photos=[m for m in (d.get('media') or []) if m.get('type') == 'photo' and m.get('url')]
+          assert len(photos) >= 2, d
           print('SMOKE PASS')
           print('author=', d['author']['screen_name'])
-          print('media_count=', len(d['media']))
-          for i,m in enumerate(d['media'],1):
-              print(f"media_{i}=", m.get('url'))
+          print('photo_count=', len(photos))
+          for i,m in enumerate(photos,1):
+              print(f"photo_{i}=", m.get('url'))
           PY
+      - name: Download resolved photo media
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import requests
+          d=json.loads(Path('/tmp/x-post.json').read_text(encoding='utf-8'))
+          out=Path('/tmp/x-post-media')
+          out.mkdir(parents=True, exist_ok=True)
+          photos=[m for m in (d.get('media') or []) if m.get('type') == 'photo' and m.get('url')]
+          manifest=[]
+          for i,m in enumerate(photos,1):
+              r=requests.get(m['url'], timeout=30)
+              r.raise_for_status()
+              ctype=(r.headers.get('content-type') or '').split(';',1)[0].strip().lower()
+              ext={
+                  'image/jpeg': '.jpg',
+                  'image/png': '.png',
+                  'image/webp': '.webp',
+                  'image/gif': '.gif',
+              }.get(ctype, '.bin')
+              p=out / f'photo_{i}{ext}'
+              p.write_bytes(r.content)
+              manifest.append({'file':p.name,'url':m['url'],'content_type':ctype,'bytes':len(r.content)})
+          (out/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
+          (out/'post.json').write_text(json.dumps(d,ensure_ascii=False,indent=2),encoding='utf-8')
+          print((out/'manifest.json').read_text(encoding='utf-8'))
+          PY
+      - name: Upload smoke media artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: x-post-resolver-live-media
+          path: /tmp/x-post-media/
+          if-no-files-found: error
+          retention-days: 1
