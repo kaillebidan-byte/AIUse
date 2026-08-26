@@ -1,0 +1,87 @@
+name: media-mcp-frames-live
+
+on:
+  push:
+    paths:
+      - ".github/workflows/media-mcp-frames-live.yml"
+      - "tools/media-mcp-frames-smoke/**"
+  pull_request:
+    paths:
+      - ".github/workflows/media-mcp-frames-live.yml"
+      - "tools/media-mcp-frames-smoke/**"
+  workflow_dispatch:
+
+jobs:
+  precision-frames:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Install published media-mcp
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install media-mcp@1.2.0
+      - name: Extract frames at requested timestamps
+        env:
+          MEDIA_MCP_CACHE_DIR: /tmp/media-mcp-cache
+        run: |
+          mkdir -p /tmp/frame-output
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import { extractFramesAtTimestamps } from './node_modules/media-mcp/dist/frames.js';
+
+          const url = fs.readFileSync('tools/media-mcp-frames-smoke/request-url.txt', 'utf8')
+            .split(/\r?\n/).map(x => x.trim()).find(x => x && !x.startsWith('#'));
+          if (!url) throw new Error('request-url.txt has no live URL');
+          const timestamps = fs.readFileSync('tools/media-mcp-frames-smoke/timestamps.txt', 'utf8')
+            .split(/\r?\n/).map(x => x.trim()).filter(x => x && !x.startsWith('#')).map(Number);
+          if (!timestamps.length || timestamps.some(x => !Number.isFinite(x))) throw new Error('invalid timestamps');
+
+          const result = await extractFramesAtTimestamps(url, timestamps, false);
+          const copied = [];
+          for (const item of result.frames) {
+            const dest = path.join('/tmp/frame-output', path.basename(item.path));
+            fs.copyFileSync(item.path, dest);
+            copied.push({ timestamp_s: item.timestamp_s, file: path.basename(dest) });
+          }
+          const manifest = {
+            source_url: url,
+            media_mcp_version: '1.2.0',
+            video_duration_s: result.videoDuration,
+            from_cache: result.fromCache,
+            frames: copied,
+          };
+          fs.writeFileSync('/tmp/frame-output/manifest.json', JSON.stringify(manifest, null, 2));
+          console.log(JSON.stringify(manifest, null, 2));
+          JS
+      - name: Assert JPG outputs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path('/tmp/frame-output')
+          manifest=json.loads((root/'manifest.json').read_text())
+          frames=sorted(root.glob('*.jpg'))
+          assert len(frames)==len(manifest['frames']) and len(frames)>0, manifest
+          for p in frames:
+              data=p.read_bytes()
+              assert data[:2] == b'\xff\xd8', (p, data[:8])
+              assert len(data) > 1000, (p, len(data))
+              print('FRAME', p.name, p.stat().st_size)
+          print('MEDIA_MCP_PRECISION_FRAMES_PASS')
+          PY
+      - name: Upload frame artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-mcp-frames-live-output
+          path: /tmp/frame-output/
+          if-no-files-found: error
+          retention-days: 1
