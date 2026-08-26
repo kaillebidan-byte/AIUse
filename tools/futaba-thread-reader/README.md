@@ -74,6 +74,19 @@ http://127.0.0.1:8765/read?url=<percent-encoded-thread-url>
 
 `?format=json` を付けるとJSONを返す。
 
+## Configurable live smoke
+
+GitHub Actionsで実ネットワーク込みの確認をしたい場合:
+
+1. mainからtemporary branchを作る。
+2. branch上の `request-url.txt` を対象スレURLへ変更する。
+3. draft PRをmain向けに作る。
+4. `.github/workflows/futaba-thread-reader-live.yml` がreader本体を実行する。
+5. `futaba-thread-reader-live-output` artifactとjob logを確認する。
+6. テスト用PRをcloseする。
+
+通常はworkflow本体を変更する必要はない。
+
 ## Access boundary
 
 `--serve` は `127.0.0.1` のみで待ち受ける。ChatGPTの実行環境から、ユーザーPC上の `localhost` へ直接アクセスすることはできない。
@@ -102,5 +115,17 @@ Last verified: **2026-08-26**
 - `img.2chan.net/b/res/...htm` の現行スレHTML構造
 - Python syntax check
 - Markdown / JSON出力経路
+- GitHub Actions上から実スレへのlive HTTP取得 **PASS**
 
-ネットワーク実行環境によっては取得可否が変わるため、実スレへのHTTP到達性は利用環境側でも確認すること。
+Known live input:
+`https://img.2chan.net/b/res/1462329741.htm`
+
+実測:
+- `thread_no = 1462329741`
+- `post_count = 157`
+- `image_posts = 1`
+- OP No. `1462329741`
+- OP本文 `評価がひっくり返り始めたな`
+- JSON artifact生成までPASS
+
+この実測により、2026-08-26時点ではGitHub-hosted runnerから `img.2chan.net` へ到達し、reader単体で現行スレを取得・解析できることを確認済み。
