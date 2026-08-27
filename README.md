@@ -22,6 +22,7 @@ AI / assistant workflows用の再利用可能な補助ツールとrecipe置き�
 | --- | --- | --- |
 | 外部調査で通常Webだけで足りるか、X/Reddit/GitHub/実ブラウザ等へ枝を広げる判断 | [research-routing](recipes/research-routing.md) | 結論を変え得るsourceへだけ枝を出し、重要候補は元本文まで確認 |
 | 「Twitchアーカイブ探して」「〇〇の雑談系VOD候補」「候補からDLして」 | [twitch-archive-discovery](recipes/twitch-archive-discovery.md) | channel解決→archive候補取得→assistant再ランキング→選択VODをlocal PCへ保存 |
+| 「ツイキャス配信一覧」「TwitCasting録画探して」「候補からDLして」 | [twitcasting-archive-discovery](recipes/twitcasting-archive-discovery.md) | handle解決→Firefox認証付きarchive候補取得→assistant再ランキング→選択movieをlocal PCへ保存 |
 | 「YouTubeで〇〇探して」「長尺/雑談/解説動画候補」「2番DLして」 | [youtube-video-discovery](recipes/youtube-video-discovery.md) | native search→assistant再ランキング→選択動画をFirefox認証付きyt-dlpでlocal PCへ保存 |
 | 「Reddit調べて」「Redditの反応・評判」 | [reddit-research](recipes/reddit-research.md) | relevant threadだけでなく必要なcommentまで確認。ChatGPT web優先 |
 | 「Xから画像探して」「Xの画像を本文に貼って/見せて」 | [x-image-research](recipes/x-image-research.md) | 元post/media確認→**最終回答本文で実画像表示**まで |
@@ -33,6 +34,12 @@ AI / assistant workflows用の再利用可能な補助ツールとrecipe置き�
 ユーザーへVOD URLを探させない。handleを解決し、private local-controlが使える場合は `twitch_archive_search` でVOD候補を列挙する。「雑談系」等の意味判断はassistant側で再ランキングする。
 
 DLはDiscoveryと分離し、選択されたVODだけlocal PCへ保存する。TwitchDownloaderCLIを第一backendとし、同一条件で既知のmetadata/quality failureを繰り返さない。詳細は `recipes/twitch-archive-discovery.md`。
+
+### TwitCasting
+
+ユーザーへmovie URLを探させない。channel / handleを解決し、private local-controlが使える場合は `twitcasting_archive_search` で `/archive` をFirefox認証付きyt-dlpから列挙する。同一movieはIDで重複排除し、合言葉付き等の解決不能entryはpartial errorとして区別する。
+
+DLはDiscoveryと分離し、選択された `/movie/<id>` だけFirefox cookies + yt-dlpでlocal PCへ保存する。YouTube専用Deno/EJS互換argsは付けない。詳細は `recipes/twitcasting-archive-discovery.md`。
 
 ### YouTube
 
@@ -97,6 +104,7 @@ AIUse/
 | --- | --- |
 | [research-routing](recipes/research-routing.md) | 通常Web→source固有Discovery→real-browser fallbackのrouter |
 | [twitch-archive-discovery](recipes/twitch-archive-discovery.md) | Twitch archive候補発見→shortlist→PC直DL |
+| [twitcasting-archive-discovery](recipes/twitcasting-archive-discovery.md) | TwitCasting archive候補発見→shortlist→Firefox認証付きPC直DL |
 | [youtube-video-discovery](recipes/youtube-video-discovery.md) | YouTube native search→shortlist→PC直DL |
 | [reddit-research](recipes/reddit-research.md) | Reddit thread/comment調査 |
 | [x-image-research](recipes/x-image-research.md) | X元post/media確認→本文内実画像表示 |
