@@ -23,14 +23,15 @@
 | repo、issue、PR、実装、release | GitHub connector / GitHub native search | 一般Webよりsource専用検索を優先 |
 | ふたば現行 | `futaba-thread-reader` | URLがある場合 |
 | ふたば消滅済み/URL不明 | `futaba-archive-research.md` | 一般検索0件を不存在判定に使わない |
-| login必須、JS描画、検索UI、anti-index、通常fetch不能 | real-browser fallback | static公開ページに常用しない |
+| login必須、JS描画、検索UI、anti-index、通常fetch不能 | local Firefox browser fallback | static公開ページに常用しない。対象domainのCookieを持つFirefox profileを自動選択 |
 | 既知URLのX本文/media | `x-post-resolver` | Discoveryではなくresolution |
 
 ## Authenticated local discovery
-利用可能な場合、private local-control経路をauthenticated sourceのDiscoveryに使える。
+利用可能な場合、private `AIUse-local-control` 経路をauthenticated sourceのDiscoveryに使える。
 
-- X: logged-in Firefox session → `x-cli` native search。2026-08-28にLatest検索、`from:` query、50〜100件取得を実証。
-- Browser fallback: `agent-browser`等の既存browser automationをlocal runnerから使用し、rendered DOMを返す。認証・profileはローカル側に保持し、結果だけをresearch evidenceとして返す。
+- X: logged-in Firefox session → `tamnd/x-cli` native search。2026-08-28にLatest検索、`from:` query、50〜100件取得を実証。既知URLは不要。
+- Browser fallback: Selenium + Firefox existing-profile clone。対象URLのdomain Cookieを持つFirefox profileをローカルで選び、そのprofileをWebDriver用にcloneしてrendered DOM / HTML / interactive snapshotを返す。元profileは変更しない。
+- 2026-08-28に通常ページのrendered readと、`x.com/home`でFirefoxの既存Xログインを継承したauthenticated readを実証。
 - 通常Webで足りる場合はlocal runnerを使わない。
 
 ## Query expansion
@@ -63,6 +64,11 @@ Web/Reddit: "Tibo said yesterday"
 - source-mismatch: そのsourceが今回の情報に向いていない
 
 失敗classが確定したら、次routeを変える。例: `blocked -> browser`、`resolver-only -> source native search`、`stale-index -> X/Reddit native`。
+
+### Known local failures
+
+- `vercel-labs/agent-browser v0.35.1` + Vivaldi custom executableは、2026-08-28のWindows self-hosted runner実測でVivaldi processまでは起動するが `open` が返らずhangした。条件・version・upstreamが変わらない限り再試行しない。
+- browser fallbackは現在、上記経路ではなくSelenium + Firefox profile cloneを既知良好経路として使う。
 
 ## Completion
 - 結論を変え得るsourceを探索したか、使わない理由が成立している。
