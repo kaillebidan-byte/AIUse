@@ -1,4 +1,4 @@
-# Twitch archive discovery recipe
+# Twitch archive discovery / local download recipe
 
 ## Trigger
 
@@ -11,7 +11,7 @@
 
 ## Goal
 
-TwitchのVOD URLをユーザーに探させず、assistant側でchannelを特定し、Twitchのarchive一覧から候補を発見し、意味的に候補を絞る。その後、選ばれたVODをprivate local-control経由でユーザーPCへ直接保存する。
+TwitchのVOD URLをユーザーに探させず、assistant側でchannelを特定し、archive一覧から候補を発見・意味的に絞る。選択されたVODはprivate local-control経由でユーザーPCへ直接保存する。
 
 ## Architecture
 
@@ -27,36 +27,35 @@ raw VOD candidates
 assistant semantic rerank
   ↓
 numbered shortlist
-  ↓ user selects / clearly asks to download one
+  ↓ user selects
 download-requests/*.json
   ↓
 local-download-request
   ↓
-TwitchDownloaderCLI
+TwitchDownloaderCLI primary
+  └─ known runtime failure → yt-dlp fallback
   ↓
-local PC video folder
+%USERPROFILE%\Videos\AIUse\Twitch\
   ↓
 Explorer selects saved file
 ```
 
 Discoveryとdownloadは別責務として扱う。
 
-- Discovery: `yt-dlp` の現行 Twitch channel playlist extractorを再利用する。
-- Download: `lay295/TwitchDownloader` の `TwitchDownloaderCLI` を再利用する。
-- TwitchDownloaderCLIにchannel search機能を再実装しない。
-- yt-dlpをTwitch VOD本体の第一download backendにはしない。VOD/Highlight直DLは専用TwitchDownloaderCLIを優先する。
+- Discovery: `yt-dlp` のTwitch channel playlist extractorを再利用する。
+- Primary download: `lay295/TwitchDownloader` の `TwitchDownloaderCLI`。
+- Fallback download: `yt-dlp`。TwitchDownloaderの同一失敗を無条件に再試行しない。
+- 動画本体はGitHubへcommitしない。
 
 ## Channel resolution
 
-ユーザーがTwitch handleを明示していない場合、まず通常Web/Twitch page/source検索でchannelを特定する。
+ユーザーがTwitch handleを明示していない場合、通常Web/Twitch page/公式SNS等からchannelを特定する。
 
-強い候補が複数ある場合だけ候補を示す。表示名、公式リンク、他SNSからTwitch handleを十分に解決できるならユーザーへhandleを聞き返さない。
+強い候補が複数ある場合だけ候補を示す。十分に解決できるならhandleを聞き返さない。
 
-## Local Discovery request
+## Local Discovery
 
 private `AIUse-local-control` が利用できる場合、`research-requests/*.json` へ `twitch_archive_search` を送る。
-
-例:
 
 ```json
 {
@@ -71,7 +70,7 @@ private `AIUse-local-control` が利用できる場合、`research-requests/*.js
 }
 ```
 
-backendはまず
+通常は
 
 ```text
 https://www.twitch.tv/<channel>/videos?filter=archives&sort=time
@@ -79,19 +78,15 @@ https://www.twitch.tv/<channel>/videos?filter=archives&sort=time
 
 を `yt-dlp --flat-playlist` で列挙する。
 
-Twitch/yt-dlp側のarchives filterが空になるケースへ備え、0件なら `filter=all` へfallbackする。fallbackした場合はmanifestへ記録する。
-
-2026-08-28のlocal-runner smokeでは `spamfish` の `filter=archives` が0件になり、`filter=all` fallbackからVOD URL / title / duration / view count / thumbnailを取得してPASSした。
+`archives` が0件なら `all` fallbackを試せるが、2026-08-28実測ではTwitch/yt-dlpの `all` / `highlights` filterが0件を返すケースもあった。filter結果を絶対視せず、取得できたsourceをmanifestへ記録する。
 
 ## Semantic shortlist
 
-ローカルbackendの `helper_score` は補助情報であり、最終判定ではない。
+ローカルbackendのhelper scoreは補助情報であり最終判定ではない。
 
-helperはtitle keyword一致に加え、`prefer_full_vods=true`なら長時間VODを少し上げ、10分未満や`Highlight:`を下げる。これはshort clip混入を減らすための粗いpriorに留める。
+「雑談系」「まったり」「近況話」「ゲーム前後のトーク」等はassistantがtitle、duration、view count、並び順、必要なら外部配信履歴を見て意味的に再ランキングする。
 
-「雑談系」「まったり」「近況話」「ゲーム前後のトーク」のような曖昧な意図はassistantが候補タイトル、長さ、view count、並び順、必要なら追加sourceを見て意味的に再ランキングする。
-
-候補提示は番号付きにする。
+候補は番号付きにする。
 
 ```text
 1. タイトルA — 2:31:10 — URL
@@ -99,67 +94,123 @@ helperはtitle keyword一致に加え、`prefer_full_vods=true`なら長時間VO
 3. タイトルC — 4:12:03 — URL
 ```
 
-ユーザーが「2番」「これ」などと返したら、このshortlistとの対応を保持してURLをdownloadへ渡す。
+ユーザーが「2番」「これ」と返したらshortlistとの対応を保持してURLをdownloadへ渡す。
 
-## Direct download
+## Direct download request
 
-ユーザーが明確にDLを依頼した候補だけ、private `AIUse-local-control/download-requests/*.json` へ `download_local` requestを作る。
-
-例:
+ユーザーが明確にDLを依頼した候補だけ、private `AIUse-local-control/download-requests/*.json` へ送る。
 
 ```json
 {
   "request_id": "20260828-twitch-download-001",
   "mode": "download_local",
   "url": "https://www.twitch.tv/videos/1234567890",
+  "title": "example title",
+  "owner": "example_channel",
+  "quality": "720p60",
   "open_explorer": true
 }
 ```
 
-これを専用 `.github/workflows/local-download-request.yml` が処理する。media analysis用 `requests/*.json` / `local-media-request` へ混ぜない。
+専用 `.github/workflows/local-download-request.yml` が処理する。media analysis用workflowへ混ぜない。
 
-current Twitch backend:
+## Quality policy
+
+品質名は対象VODで実在確認してから指定する。TwitchDownloaderは存在しないquality指定を最高品質へfallbackし得るため、未確認文字列で比較しない。
+
+2026-08-28 EliaStellaria `hello` VODの実在品質:
 
 ```text
-Twitch VOD URL
-  ↓
-TwitchDownloaderCLI videodownload
-  ↓
-%USERPROFILE%\Videos\AIUse\Twitch\*.mp4
-  ↓
-explorer.exe /select,<saved file>
+1080p60
+720p60
+480p30
+360p30
+160p30
+audio
 ```
 
-動画本体はGitHub repoへcommitしない。private resultへ返すのはlocal path、title、VOD id、size等のsmall manifestだけ。
+運用目安:
 
-## Download backend
+- 画質優先: highest / 1080p60
+- バランス: `720p60`
+- 長尺・軽量保存: `480p30`
 
-Twitch VOD / Highlight direct downloadは `lay295/TwitchDownloader` のWindows x64 CLI releaseを使う。
+同VOD実測:
 
-- local-control側でlatest Windows x64 release assetを必要時に取得し、`%LOCALAPPDATA%\AIUse\bin\twitchdownloader\`へcacheする。
-- 2026-08-28に `TwitchDownloaderCLI 1.56.5` の取得・起動・VOD `info --format raw` metadata probeをlocal runnerでPASS。
-- VOD IDはURLから保持し、raw metadataからtitle / owner / createdAt等を取得する。
-- defaultはhighest available quality。
-- `quality`指定がある場合だけCLIへ渡す。
-- download threadsは4をdefaultとする。
-- output collisionは対話promptを出さないようlocal-control側でunique filenameを作り、CLIへ`--collision Exit`を渡す。
-- FFmpegが利用可能ならCLIへpathを渡す。
+```text
+10m 1080p60: ~726 MiB / 94.91s
+10m 720p60 : ~232 MiB / 39.43s
+full 4:31:40 480p30 via yt-dlp fallback:
+  2,734,849,773 bytes (~2.55 GiB)
+  537.49s (~8m57s)
+```
 
-Subscriber-only等でOAuthが必要なVODは、通常public VODと同じ扱いで認証回避しない。必要な正規アクセス権がlocal環境に無い場合は取得不能として返す。
+## Primary backend — TwitchDownloaderCLI
 
-## Verification boundary
+Twitch VOD / Highlight direct downloadの第一経路は `TwitchDownloaderCLI`。
 
-2026-08-28時点:
+- Windows x64 releaseを `%LOCALAPPDATA%\AIUse\bin\twitchdownloader\`へcache。
+- verified version: `1.56.5`。
+- default threads: 4。
+- `--collision Exit`。
+- FFmpeg利用可能ならpathを渡す。
+- partial benchmarkには公式 `--beginning / --ending` trimを使える。
+
+## yt-dlp fallback
+
+2026-08-28、同一の有効VODでTwitchDownloaderCLI 1.56.5が一時的に次を返した。
+
+```text
+GetOrGenerateVideoChapters NullReferenceException
+GetQualityPlaylist: Invalid VOD, deleted/expired VOD possibly?
+```
+
+直前には同VODのquality probeとsegment downloadが成功しており、VOD自体は利用可能だった。同じ条件でTwitchDownloaderを繰り返さず、`yt-dlp`へfallbackしたところ `480p30` full downloadがPASSした。
+
+fallback requestは `backend: "yt-dlp"` を指定する。TwitchではYouTube専用compat argsを付けない。
+
+`yt-dlp` fallbackはHLS fragment並列数4を使用し、ローカルPowerShellへnative progress / speed / ETAを表示する。
+
+## Local progress UI
+
+長尺DLの進捗はChatGPTがpollし続けるのではなく、Windows側の別PowerShell窓へ表示する。
+
+表示対象:
+
+```text
+percent
+transferred size
+speed
+ETA
+elapsed time
+```
+
+完了後はExplorerで保存ファイルを選択表示する。
+
+## Cache policy
+
+TwitchDownloaderの中断cacheは非常に大きくなる場合がある。2026-08-28の1080p60中断では約14.8GB残った。
+
+TwitchDownloaderCLI 1.56.5には中断cacheを自動resumeするverified経路がない。不要と判断されたcacheはVOD ID単位でtargeted clearする。全cache一括削除をdefaultにしない。
+
+## Access boundary
+
+Subscriber-only等でOAuthが必要なVODは認証回避しない。local環境に正規アクセス権が無ければ取得不能として返す。
+
+## Verification boundary — 2026-08-28
 
 - channel archive Discovery: PASS
-- candidate URL/title/duration/view count return: PASS
-- archives -> all fallback: PASS
-- TwitchDownloaderCLI Windows x64 acquisition/cache: PASS
-- selected VOD URL -> TwitchDownloaderCLI metadata resolution: PASS
-- dedicated lightweight download workflow: PASS through backend + result publish in `probe_only` mode
-- actual MP4 full download + Explorer selection: **pending first user-selected VOD**
-
-テスト用の第三者VODを勝手に本体downloadしてverificationを埋めない。ユーザーが実際に選んだ候補を最初のfull-download E2Eに使う。
+- candidate URL/title/duration/view count: PASS
+- semantic shortlist → selected VOD: PASS
+- TwitchDownloaderCLI acquisition/cache: PASS
+- quality probe: PASS
+- TwitchDownloaderCLI 1080p60/720p60 segment: PASS
+- local progress PowerShell: PASS
+- Explorer select/open: PASS
+- targeted cache probe/clear: PASS
+- TwitchDownloader transient runtime failure detection: PASS
+- yt-dlp `480p30` full fallback, 4:31:40: PASS
+- result manifest publish without video upload: PASS
 
 ## Completion
 
@@ -167,13 +218,13 @@ Discovery依頼:
 
 - channelを特定した。
 - Twitch archive一覧を実際に取得した、または取得不能理由を確認した。
-- raw検索結果のままではなくユーザー意図に合わせてshortlistした。
+- raw結果のままではなくユーザー意図に合わせてshortlistした。
 - 各候補に直接VOD URLを保持した。
 
 Download依頼:
 
 - ユーザーが選んだ候補URLと対応している。
-- TwitchDownloaderCLIの終了成功を確認した。
-- local fileの存在を確認した。
+- primaryまたはfallback backendの終了成功を確認した。
+- local fileの存在とsizeを確認した。
 - `open_explorer=true`なら保存ファイルをExplorerで選択表示した。
 - 動画本体をGitHubへ返していない。
