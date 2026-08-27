@@ -20,6 +20,7 @@ AI / assistant workflows用の小さな補助ツールと定型作業recipeの�
 | User intent / trigger | Read first | Critical completion |
 | --- | --- | --- |
 | 外部調査で通常Webだけで足りるか、X/Reddit/GitHub/実ブラウザ等へ枝を広げる判断 | [research-routing](recipes/research-routing.md) | 結論を変え得るsourceへだけ枝を出し、重要候補は元本文まで確認 |
+| 「Twitchアーカイブ探して」「〇〇の雑談系VOD候補」「候補からDLしておいて」 | [twitch-archive-discovery](recipes/twitch-archive-discovery.md) | channel解決→archive候補取得→assistant再ランキング→選択VODをlocal PCへ保存 |
 | 「Reddit調べて」「Redditの反応・評判」 | [reddit-research](recipes/reddit-research.md) | relevant threadだけでなく必要なcommentまで確認。ChatGPTではweb open優先 |
 | 「Xから画像探して」「Xの画像を本文に載せて/貼って/見せて」「最近の公式絵を持ってきて」 | [x-image-research](recipes/x-image-research.md) | **実画像が最終回答本文で描画されるまで**。post URLやmedia URLだけでは未完了 |
 | 「動画を文字起こし/要約」「動画内の発話を確認」 | [video-transcription](recipes/video-transcription.md) | download経路とSTTを分離し、必要なら実音声→transcript/timestampsまで取得 |
@@ -28,6 +29,8 @@ AI / assistant workflows用の小さな補助ツールと定型作業recipeの�
 | ふたば/X/Reddit/GitHub等をまたいだ実例調査 | [source-deep-dive](recipes/source-deep-dive.md) | sourceを横断して結論を変える材料まで確認。ふたば過去ログが関係する場合はarchive recipeも併用 |
 
 特にX画像提示では、外部 `pbs.twimg.com` URLをMarkdown画像にしただけではChatGPT UI上で表示されないことがある。`recipes/x-image-research.md` のknown-good transport pathとfailure ledgerを参照し、同じ失敗探索を繰り返さない。
+
+Twitch archive探索では、ユーザーへVOD URLを探させない。channel/handleを解決し、private local-controlが使える場合は `twitch_archive_search` でVOD候補を列挙し、曖昧な「雑談系」等の意味判断はassistant側で再ランキングする。DLは検索backendと分離し、選択されたVODだけ `TwitchDownloaderCLI` でユーザーPCへ直保存する。詳細は `recipes/twitch-archive-discovery.md`。
 
 ふたば過去ログ探索では、一般検索engineにindexされていないスレがある。Google/Bing等で0件でも不存在とは扱わず、`recipes/futaba-archive-research.md` に従ってFutafuta等の過去ログ検索から候補を発見し、`kako.futakuro.com` 等で取得できるarchive本文まで確認する。現行スレ取得用の `tools/futaba-thread-reader/` と、消滅済みスレの発見は別問題として扱う。
 
@@ -76,6 +79,7 @@ AIUse/
 | Recipe | Purpose |
 | --- | --- |
 | [research-routing](recipes/research-routing.md) | 通常Webからsource固有Discovery・実ブラウザfallbackへ分岐する検索router |
+| [twitch-archive-discovery](recipes/twitch-archive-discovery.md) | Twitch channelのVOD候補発見→意味的shortlist→TwitchDownloaderCLI直DLへ接続 |
 | [reddit-research](recipes/reddit-research.md) | Redditの評判・体験談・commentまで確認する調査 |
 | [x-image-research](recipes/x-image-research.md) | Xの元post特定→本文/media確認→**ChatGPT本文内の実画像表示**まで進める |
 | [video-transcription](recipes/video-transcription.md) | 動画取得経路とSTTを分離し、発話をtranscript/timestampsへ変換する |
