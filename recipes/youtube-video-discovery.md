@@ -1,4 +1,4 @@
-# YouTube video discovery recipe
+# YouTube video discovery / local save recipe
 
 ## Trigger
 
@@ -47,8 +47,6 @@ Discoveryとdownloadは別責務として扱う。
 
 private `AIUse-local-control` が利用できる場合、`research-requests/*.json`へ `youtube_search` を送る。
 
-例:
-
 ```json
 {
   "request_id": "20260828-youtube-example",
@@ -66,7 +64,8 @@ backendは既存 `yt-dlp` のnative searchを再利用する。
 - `sort=relevance` → `ytsearchN:<query>`
 - `sort=date` → `ytsearchdateN:<query>`
 - default auth sourceはFirefox
-- Firefox cookie extractionが一時的に失敗した場合だけpublic searchへfallback可能
+- Firefox cookie extraction自体が一時的に失敗した場合だけpublic searchへfallback可能
+- fallback有無はresultへ記録する
 
 返す候補情報:
 
@@ -91,7 +90,7 @@ native searchのsource rankは検索engineの候補順であり最終判断で�
 
 「雑談っぽい」「長尺」「解説中心」「ゲームより会話多め」のような曖昧な条件はassistantがtitle / channel / duration / views / date等から意味的に再ランキングする。
 
-候補提示は番号付きにし、各候補のURLを内部で保持する。
+候補提示は番号付きにし、各候補のURLと`video_id`を内部で保持する。
 
 ```text
 1. タイトルA — channel — 1:42:10 — URL
@@ -110,6 +109,7 @@ native searchのsource rankは検索engineの候補順であり最終判断で�
   "request_id": "20260828-youtube-download-example",
   "mode": "download_local",
   "url": "https://www.youtube.com/watch?v=VIDEO_ID",
+  "video_id": "VIDEO_ID",
   "title": "Candidate title",
   "channel": "Channel Name",
   "browser": "firefox",
@@ -117,6 +117,8 @@ native searchのsource rankは検索engineの候補順であり最終判断で�
   "open_explorer": true
 }
 ```
+
+`video_id`はshortlistから得られる場合はそのまま渡す。URL直指定時はlocal wrapperがwatch / youtu.be / shorts / live URLからIDを抽出する。
 
 current backend:
 
@@ -138,8 +140,8 @@ Explorer /select
 - `--remote-components ejs:github`
 - `youtube:player_client=default,web_embedded`
 - Deno優先のJS runtime
-
-動画本体はGitHubへcommitしない。private resultへ返すのはsmall manifestだけ。
+- `--no-playlist`
+- video bytesはlocal PCだけに保存
 
 friendly quality examples:
 
@@ -150,6 +152,20 @@ friendly quality examples:
 - `480p30`
 
 指定値は上限としてformat selectorへ変換する。取得可能なformatが異なる動画ではyt-dlpのformat selectionに従う。
+
+## Local progress UI
+
+実DL時はChatGPTが細かくpollするのではなく、Windows側の別PowerShell窓へyt-dlp progressを表示する。
+
+```text
+percent
+transferred size
+speed
+ETA
+elapsed time
+```
+
+完了後は`open_explorer=true`ならExplorerで保存ファイルを選択表示する。
 
 ## Heavy analysis boundary
 
@@ -163,13 +179,60 @@ friendly quality examples:
 
 ユーザーが「文字起こしして」「この場面を見て」「映像を解析して」のように明示した時だけ `video-transcription.md` / `video-analysis.md` を読む。
 
+## Verification — 2026-08-28
+
+### Discovery
+
+Firefoxログイン状態を使い、次をlocal runnerで実証。
+
+```text
+query: OpenAI Codex
+limit: 5
+sort: relevance
+browser: firefox
+authenticated: true
+```
+
+結果:
+
+```text
+raw candidates: 5
+returned candidates: 5
+authenticated fallback to public: false
+```
+
+候補にはOpenAI公式動画を含み、URL / id / title / channel / duration / views / thumbnailを取得できた。
+
+### Authenticated download probe
+
+OpenAI公式 `Introducing the Codex Micro` (`m8uUUUsMD3Y`, 2:15) でFirefox-authenticated probeを実行。
+
+```text
+m8uUUUsMD3Y | Introducing the Codex Micro | OpenAI | 135
+```
+
+PASS。
+
+### Actual local save E2E
+
+同じOpenAI公式動画を`480p30`で実保存。
+
+```text
+bytes: 4,455,220
+download elapsed: 9.33s
+Explorer select/open: PASS
+video bytes uploaded to GitHub: no
+```
+
+最初のE2Eではwrapperのwatch-URL ID parserがファイル名用IDを`youtube`へfallbackしたが、download自体は正常だった。直後にparserを修正し、`video_id`をshortlistから明示的に渡せるようにもした。
+
 ## Completion
 
 Discovery:
 
 - native YouTube searchを実行した。
 - raw候補をそのまま投げず、ユーザー意図でshortlistした。
-- 各番号とYouTube URLの対応を保持した。
+- 各番号とYouTube URL / video idの対応を保持した。
 
 Download:
 
