@@ -1,7 +1,7 @@
 # Research routing recipe
 
 ## Trigger
-外部調査で、通常Webだけで足りるか、X / Reddit / GitHub / ふたば / 実ブラウザ等へ枝を広げるべきか判断する場面。
+外部調査で、通常Webだけで足りるか、X / Reddit / GitHub / Twitch / ふたば / 実ブラウザ等へ枝を広げるべきか判断する場面。
 
 ## Goal
 検索engineの上位結果だけで早上がりせず、結論を変え得るsourceへだけ追加探索を出す。tool数を増やすこと自体を目的にせず、検索・Discovery・本文取得・browser fallbackを分離する。
@@ -21,15 +21,17 @@
 | 速報、スタッフ発言、告知、social reaction、X上の引用元 | X native Discovery | URL既知前提にしない。query検索→候補post→必要なら `x-post-resolver` |
 | Redditの評判、体験談、thread/comment | ChatGPT webでRedditを直接open | GitHub-hosted runnerの403既知。`reddit-research.md`を併用 |
 | repo、issue、PR、実装、release | GitHub connector / GitHub native search | 一般Webよりsource専用検索を優先 |
+| Twitch配信者のVOD/アーカイブ候補、曖昧な「雑談系」等 | `twitch-archive-discovery.md` | channel解決後はTwitch VOD一覧をnativeに列挙し、assistantが意味的に再ランキング。DLはTwitchDownloaderCLIへ分離 |
 | ふたば現行 | `futaba-thread-reader` | URLがある場合 |
 | ふたば消滅済み/URL不明 | `futaba-archive-research.md` | 一般検索0件を不存在判定に使わない |
 | login必須、JS描画、検索UI、anti-index、通常fetch不能 | local Firefox browser fallback | static公開ページに常用しない。対象domainのCookieを持つFirefox profileを自動選択 |
 | 既知URLのX本文/media | `x-post-resolver` | Discoveryではなくresolution |
 
 ## Authenticated local discovery
-利用可能な場合、private `AIUse-local-control` 経路をauthenticated sourceのDiscoveryに使える。
+利用可能な場合、private `AIUse-local-control` 経路をauthenticated/source-specific Discoveryに使える。
 
 - X: logged-in Firefox session → `tamnd/x-cli` native search。2026-08-28にLatest検索、`from:` query、50〜100件取得を実証。既知URLは不要。
+- Twitch archives: channel handle → current yt-dlp Twitch playlist extractor → VOD候補JSON/Markdown。2026-08-28にlocal runnerで候補URL・title・duration・view count取得を実証。`filter=archives`が0件の場合は`filter=all`へfallbackし、その事実を結果へ記録する。
 - Browser fallback: Selenium + Firefox existing-profile clone。対象URLのdomain Cookieを持つFirefox profileをローカルで選び、そのprofileをWebDriver用にcloneしてrendered DOM / HTML / interactive snapshotを返す。元profileは変更しない。
 - 2026-08-28に通常ページのrendered readと、`x.com/home`でFirefoxの既存Xログインを継承したauthenticated readを実証。
 - 通常Webで足りる場合はlocal runnerを使わない。
@@ -51,6 +53,15 @@ Web/Reddit: "Tibo said yesterday"
 → X: Tibo Codex reset
 → X: from:thsottiaux reset
 → 候補post本文と日時を確認
+```
+
+```text
+User: "〇〇の雑談系Twitchアーカイブ"
+→ Web/Twitch: channel handle解決
+→ Twitch native archive list
+→ titles/durationsをassistantが意味的にshortlist
+→ user selects candidate
+→ TwitchDownloaderCLI local download
 ```
 
 ## Failure routing
