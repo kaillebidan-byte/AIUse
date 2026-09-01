@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AIUse RPLAY Live Recorder
 // @namespace    https://github.com/kaillebidan-byte/AIUse
-// @version      0.1.0
+// @version      0.2.0
 // @description  Add RPLAY live popup/inline controls in ChatGPT and one-click ffmpeg handoff on rplay.live.
 // @match        https://rplay.live/*
 // @match        https://www.rplay.live/*
@@ -9,6 +9,8 @@
 // @match        https://chat.openai.com/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
+// @updateURL    https://raw.githubusercontent.com/kaillebidan-byte/AIUse/main/tools/rplay-live-recorder/rplay-live-recorder.user.js
+// @downloadURL  https://raw.githubusercontent.com/kaillebidan-byte/AIUse/main/tools/rplay-live-recorder/rplay-live-recorder.user.js
 // ==/UserScript==
 
 (() => {
@@ -17,10 +19,55 @@
   const RECORD_SCHEME = 'aiuse-rplay-record://start';
   const CLIPBOARD_PREFIX = 'AIUSE_RPLAY_RECORD_V1\n';
   const RPLAY_LIVE_RE = /^https:\/\/(?:www\.)?rplay\.live\/live\/[0-9a-f]{24}(?:[/?#]|$)/i;
+  const RPLAY_LIVE_IN_TEXT_RE = /https:\/\/(?:www\.)?rplay\.live\/live\/[0-9a-f]{24}(?:[/?#][^\s<>"']*)?/i;
   const MEDIA_EXT_RE = /\.(?:flv|m3u8|mp4)(?:$|[?#])/i;
 
   function isRplayPage() {
     return /(^|\.)rplay\.live$/i.test(location.hostname);
+  }
+
+  function normalizeLiveUrl(raw) {
+    if (!raw || typeof raw !== 'string') return null;
+    const trimmed = raw.trim();
+    const direct = trimmed.match(RPLAY_LIVE_IN_TEXT_RE)?.[0];
+    if (direct) {
+      try {
+        const u = new URL(direct);
+        return RPLAY_LIVE_RE.test(u.href) ? u.href : null;
+      } catch {}
+    }
+
+    try {
+      const outer = new URL(trimmed, location.href);
+      if (RPLAY_LIVE_RE.test(outer.href)) return outer.href;
+      for (const key of ['url', 'q', 'target', 'redirect', 'redirect_url', 'dest']) {
+        const nested = outer.searchParams.get(key);
+        if (!nested) continue;
+        try {
+          const decoded = decodeURIComponent(nested);
+          const found = decoded.match(RPLAY_LIVE_IN_TEXT_RE)?.[0];
+          if (found && RPLAY_LIVE_RE.test(found)) return found;
+        } catch {}
+      }
+    } catch {}
+    return null;
+  }
+
+  function liveUrlFromAnchor(anchor) {
+    const values = [
+      anchor.href,
+      anchor.getAttribute?.('href'),
+      anchor.getAttribute?.('data-href'),
+      anchor.getAttribute?.('data-url'),
+      anchor.textContent,
+      anchor.getAttribute?.('aria-label'),
+      anchor.getAttribute?.('title'),
+    ];
+    for (const value of values) {
+      const url = normalizeLiveUrl(value);
+      if (url) return url;
+    }
+    return null;
   }
 
   function scoreMediaUrl(raw) {
@@ -148,14 +195,34 @@
       background: 'transparent',
       color: 'inherit',
       verticalAlign: 'middle',
+      whiteSpace: 'nowrap',
     });
   }
 
+  function controlHost(anchor) {
+    const parent = anchor.parentElement;
+    if (!parent) return null;
+    let host = anchor.nextElementSibling;
+    if (host?.classList?.contains('aiuse-rplay-live-controls')) return host;
+    host = document.createElement('span');
+    host.className = 'aiuse-rplay-live-controls';
+    host.dataset.aiuseRplayFor = '1';
+    anchor.insertAdjacentElement('afterend', host);
+    return host;
+  }
+
   function addChatGptControls(anchor) {
-    if (anchor.dataset.aiuseRplayControls === '1') return;
-    const href = anchor.href;
-    if (!RPLAY_LIVE_RE.test(href)) return;
-    anchor.dataset.aiuseRplayControls = '1';
+    if (!(anchor instanceof HTMLAnchorElement)) return;
+    const href = liveUrlFromAnchor(anchor);
+    if (!href) return;
+
+    const existing = anchor.nextElementSibling;
+    if (existing?.classList?.contains('aiuse-rplay-live-controls') && existing.dataset.href === href) return;
+    if (existing?.classList?.contains('aiuse-rplay-live-controls')) existing.remove();
+
+    const host = controlHost(anchor);
+    if (!host) return;
+    host.dataset.href = href;
 
     const popup = document.createElement('button');
     popup.type = 'button';
@@ -176,7 +243,10 @@
     inline.addEventListener('click', event => {
       event.preventDefault();
       event.stopPropagation();
-      const marker = anchor.parentElement?.querySelector(':scope > .aiuse-rplay-inline-frame');
+      const parent = anchor.parentElement;
+      if (!parent) return;
+      const selector = `.aiuse-rplay-inline-frame[data-live-id="${href.match(/[0-9a-f]{24}/i)?.[0] || ''}"]`;
+      const marker = parent.querySelector(selector);
       if (marker) {
         marker.remove();
         return;
@@ -184,6 +254,7 @@
 
       const frame = document.createElement('iframe');
       frame.className = 'aiuse-rplay-inline-frame';
+      frame.dataset.liveId = href.match(/[0-9a-f]{24}/i)?.[0] || '';
       frame.src = href;
       frame.allow = 'autoplay; fullscreen; picture-in-picture';
       frame.referrerPolicy = 'strict-origin-when-cross-origin';
@@ -196,30 +267,33 @@
         borderRadius: '10px',
         background: '#111',
       });
-      anchor.parentElement?.appendChild(frame);
+      parent.appendChild(frame);
     });
 
-    anchor.insertAdjacentElement('afterend', inline);
-    anchor.insertAdjacentElement('afterend', popup);
+    host.append(popup, inline);
   }
 
   function scanChatGptLinks(root = document) {
-    const anchors = root.querySelectorAll?.('a[href*="rplay.live/live/"]') || [];
+    if (root instanceof HTMLAnchorElement) addChatGptControls(root);
+    const anchors = root.querySelectorAll?.('a[href]') || [];
     for (const anchor of anchors) addChatGptControls(anchor);
   }
 
   function installChatGptLinkObserver() {
+    document.documentElement.dataset.aiuseRplayRecorder = '0.2.0';
     scanChatGptLinks();
     const observer = new MutationObserver(mutations => {
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
           if (!(node instanceof Element)) continue;
-          if (node.matches?.('a[href*="rplay.live/live/"]')) addChatGptControls(node);
           scanChatGptLinks(node);
         }
       }
     });
-    observer.observe(document.documentElement, { childList: true, subtree: true });
+    observer.observe(document.documentElement, {childList: true, subtree: true});
+    // ChatGPT virtualizes/replaces message DOM. Periodic reconciliation is cheap
+    // and restores controls if React removes injected siblings.
+    setInterval(() => scanChatGptLinks(document), 1500);
   }
 
   if (isRplayPage()) installRplayRecorderButton();
