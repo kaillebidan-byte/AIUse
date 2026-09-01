@@ -48,6 +48,33 @@ Write-Host "Handler=$installedHandler"
 Write-Host 'The first browser launch may ask whether to open the external protocol.'
 
 if (-not $NoOpenUserscript) {
-  Write-Host 'Opening the Tampermonkey userscript URL in the default browser...'
-  Start-Process $userscriptUrl
+  $browserPaths = @(
+    (Join-Path $env:LOCALAPPDATA 'Vivaldi\Application\vivaldi.exe'),
+    (Join-Path $env:ProgramFiles 'Mozilla Firefox\firefox.exe')
+  )
+  if (${env:ProgramFiles(x86)}) {
+    $browserPaths += (Join-Path ${env:ProgramFiles(x86)} 'Mozilla Firefox\firefox.exe')
+  }
+
+  $opened = 0
+  $seen = @{}
+  foreach ($browser in $browserPaths) {
+    if (-not $browser -or -not (Test-Path -LiteralPath $browser)) { continue }
+    $key = [IO.Path]::GetFullPath($browser).ToLowerInvariant()
+    if ($seen.ContainsKey($key)) { continue }
+    $seen[$key] = $true
+    try {
+      Write-Host "Opening userscript in: $browser"
+      Start-Process -FilePath $browser -ArgumentList @($userscriptUrl)
+      $opened++
+    } catch {
+      Write-Warning "Could not open userscript in $browser"
+    }
+  }
+  if ($opened -eq 0) {
+    Write-Host 'Opening the Tampermonkey userscript URL in the default browser...'
+    Start-Process $userscriptUrl
+  } else {
+    Write-Host 'Install/update AIUse RPLAY Live Recorder in each browser where you use ChatGPT or RPLAY.'
+  }
 }
