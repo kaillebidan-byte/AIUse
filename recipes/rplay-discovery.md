@@ -79,6 +79,24 @@ RPLAYトップをFirefox既存profileで開き、表示中のsearch UIを解決�
 
 Resultは `candidates.jsonl` と `manifest.json`。候補にはkind、content/creator OID、page URL、card text、access class等を含める。
 
+### Current live discovery — follow stateに依存しない
+
+現在liveの有無をrendered DOM上の `/live/...` linkで判定しない。RPLAYは未follow creatorのlive導線を画面から省くことがある。
+
+`rplay_search` はcurrent liveについて次を正規経路とする。
+
+1. `GET /live/livestreams` でsite-wideの現在liveを列挙する。
+2. `account/bulkgetusers` でnickname / creatorTags等のsafe metadataを補完し、query relevanceを付ける。
+3. 各current liveだけ `GET /live/play?creatorOid=...` をログイン済みFirefox sessionからmetadata-onlyで照会する。
+4. `streamState` を `live / youtube / twitch / offline` に分類する。
+5. native liveは `accessible / allowAnonymous / tierHashes` から `public / login_viewable / paid_entitled / free_subscription / paid_required / restricted_unknown` を付ける。
+6. `free_subscription` は無料follow/無料join等の0円操作候補として通常shortlistへ残す。実際のfollow mutationは候補選択後まで行わない。
+7. canonical candidate URLは `https://rplay.live/live/<creatorOid>` とし、ChatGPT Inline Video LiteのRPLAY providerへそのまま渡せる形にする。
+
+2026-09-02 smoke (`ASMR`) ではcurrent live 17件を取得し、`public 8 / free_subscription 4 / external_live 4 / login_viewable 1` に分類した。17件すべて追加課金不要でdefault shortlistに残り、ASMR一致liveが先頭へrankされた。
+
+JWT、requestor credential、signed media URL、live keyはbrowser context外へ返さない。
+
 ## Access preflight / 課金切り分け
 
 `/play` 候補はdownloadを試す前にmetadata-onlyで分類する。動画本体の取得をaccess判定に使わない。

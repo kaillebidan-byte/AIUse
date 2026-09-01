@@ -10,9 +10,9 @@ $scheme = 'aiuse-rplay-record'
 $regRoot = "HKCU:\Software\Classes\$scheme"
 $installRoot = Join-Path $env:LOCALAPPDATA 'AIUse\rplay-live-recorder'
 $installedHandler = Join-Path $installRoot 'rplay_record_protocol.ps1'
-$rawBase = 'https://raw.githubusercontent.com/kaillebidan-byte/AIUse/main/tools/rplay-live-recorder'
+$rawBase = 'https://raw.githubusercontent.com/kaillebidan-byte/AIUse/main/tools/chatgpt-inline-video-lite'
 $handlerUrl = "$rawBase/rplay_record_protocol.ps1"
-$userscriptUrl = "$rawBase/rplay-live-recorder.user.js"
+$userscriptUrl = "$rawBase/chatgpt-inline-video-lite.user.js"
 $sourceHandler = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'rplay_record_protocol.ps1' } else { $null }
 
 if ($Uninstall) {
@@ -48,6 +48,6 @@ Write-Host "Handler=$installedHandler"
 Write-Host 'The first browser launch may ask whether to open the external protocol.'
 
 if (-not $NoOpenUserscript) {
-  Write-Host 'Opening the Tampermonkey userscript URL in the default browser...'
+  Write-Host 'Opening the ChatGPT Inline Video Lite userscript URL in the default browser...'
   Start-Process $userscriptUrl
 }
