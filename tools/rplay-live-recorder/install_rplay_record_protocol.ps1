@@ -1,5 +1,6 @@
 param(
-  [switch]$Uninstall
+  [switch]$Uninstall,
+  [switch]$NoOpenUserscript
 )
 
 $ErrorActionPreference = 'Stop'
@@ -8,8 +9,11 @@ Set-StrictMode -Version Latest
 $scheme = 'aiuse-rplay-record'
 $regRoot = "HKCU:\Software\Classes\$scheme"
 $installRoot = Join-Path $env:LOCALAPPDATA 'AIUse\rplay-live-recorder'
-$sourceHandler = Join-Path $PSScriptRoot 'rplay_record_protocol.ps1'
 $installedHandler = Join-Path $installRoot 'rplay_record_protocol.ps1'
+$rawBase = 'https://raw.githubusercontent.com/kaillebidan-byte/AIUse/main/tools/rplay-live-recorder'
+$handlerUrl = "$rawBase/rplay_record_protocol.ps1"
+$userscriptUrl = "$rawBase/rplay-live-recorder.user.js"
+$sourceHandler = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'rplay_record_protocol.ps1' } else { $null }
 
 if ($Uninstall) {
   Remove-Item -LiteralPath $regRoot -Recurse -Force -ErrorAction SilentlyContinue
@@ -17,15 +21,16 @@ if ($Uninstall) {
   exit 0
 }
 
-if (-not (Test-Path -LiteralPath $sourceHandler)) {
-  throw "Handler was not found beside this installer: $sourceHandler"
-}
 if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
   throw 'ffmpeg was not found on PATH. Install/enable ffmpeg before registering the recorder.'
 }
 
 New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
-Copy-Item -LiteralPath $sourceHandler -Destination $installedHandler -Force
+if ($sourceHandler -and (Test-Path -LiteralPath $sourceHandler)) {
+  Copy-Item -LiteralPath $sourceHandler -Destination $installedHandler -Force
+} else {
+  Invoke-WebRequest -UseBasicParsing -Uri $handlerUrl -OutFile $installedHandler
+}
 
 New-Item -Path $regRoot -Force | Out-Null
 Set-Item -Path $regRoot -Value 'URL:AIUse RPLAY Recorder'
@@ -41,3 +46,8 @@ Write-Host 'RPLAY recorder protocol installed.'
 Write-Host "Scheme=$scheme"
 Write-Host "Handler=$installedHandler"
 Write-Host 'The first browser launch may ask whether to open the external protocol.'
+
+if (-not $NoOpenUserscript) {
+  Write-Host 'Opening the Tampermonkey userscript URL in the default browser...'
+  Start-Process $userscriptUrl
+}
