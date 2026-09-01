@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AIUse ChatGPT Inline X Media
 // @namespace    https://github.com/kaillebidan-byte/AIUse
-// @version      0.1.0
+// @version      0.1.1
 // @description  Render AIUse X media markers inside ChatGPT without sending image pixels to the model; attach selected images to the composer on demand.
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -51,20 +51,31 @@
 
   function parsePayload(token) {
     const payload = JSON.parse(decodeBase64Url(token));
-    if (!payload || payload.v !== 1 || !Array.isArray(payload.media)) throw new Error('unsupported AIUse X media payload');
+    if (!payload || payload.v !== 1 || !Array.isArray(payload.media)) {
+      throw new Error('unsupported AIUse X media payload');
+    }
     return payload;
   }
 
   function sanitizeUrl(raw) {
     const u = new URL(raw, location.href);
-    if (u.protocol !== 'https:') throw new Error('https media URL required');
+    if (!['https:'].includes(u.protocol)) throw new Error('https media URL required');
     return u.href;
   }
 
-  function hiddenKey(url) { return HIDDEN_PREFIX + url; }
-  function isHidden(url) { try { return sessionStorage.getItem(hiddenKey(url)) === '1'; } catch { return false; } }
+  function hiddenKey(url) {
+    return HIDDEN_PREFIX + url;
+  }
+
+  function isHidden(url) {
+    try { return sessionStorage.getItem(hiddenKey(url)) === '1'; } catch { return false; }
+  }
+
   function setHidden(url, hidden) {
-    try { hidden ? sessionStorage.setItem(hiddenKey(url), '1') : sessionStorage.removeItem(hiddenKey(url)); } catch {}
+    try {
+      if (hidden) sessionStorage.setItem(hiddenKey(url), '1');
+      else sessionStorage.removeItem(hiddenKey(url));
+    } catch {}
   }
 
   function filenameFor(url, index, mime='') {
@@ -77,14 +88,22 @@
         name += ext;
       }
       return name;
-    } catch { return `x-media-${index + 1}.jpg`; }
+    } catch {
+      return `x-media-${index + 1}.jpg`;
+    }
   }
 
   function gmFetchBlob(url) {
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
-        method: 'GET', url, responseType: 'blob', timeout: 30000,
-        onload: res => res.status >= 200 && res.status < 300 && res.response ? resolve(res.response) : reject(new Error(`media fetch HTTP ${res.status}`)),
+        method: 'GET',
+        url,
+        responseType: 'blob',
+        timeout: 30000,
+        onload: res => {
+          if (res.status >= 200 && res.status < 300 && res.response) resolve(res.response);
+          else reject(new Error(`media fetch HTTP ${res.status}`));
+        },
         onerror: () => reject(new Error('media fetch failed')),
         ontimeout: () => reject(new Error('media fetch timed out')),
       });
@@ -93,11 +112,14 @@
 
   function likelyChatGPTFileInput() {
     const inputs = [...document.querySelectorAll('input[type="file"]')];
-    return inputs.find(el => /image|video|\*/i.test(el.accept || '') || el.multiple) || inputs[0] || null;
+    if (!inputs.length) return null;
+    return inputs.find(el => /image|video|\*/i.test(el.accept || '') || el.multiple) || inputs[0];
   }
 
   function composerTarget() {
-    return document.querySelector('#prompt-textarea') || document.querySelector('form [contenteditable="true"]') || document.querySelector('main [contenteditable="true"]');
+    return document.querySelector('#prompt-textarea')
+      || document.querySelector('form [contenteditable="true"]')
+      || document.querySelector('main [contenteditable="true"]');
   }
 
   function makeTransfer(file) {
@@ -115,22 +137,31 @@
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
         return 'file-input';
-      } catch (err) { console.debug('[AIUse X media] file input attach failed', err); }
+      } catch (err) {
+        console.debug('[AIUse X media] file input attach failed', err);
+      }
     }
 
     const target = composerTarget();
     if (target) {
       try {
         const dt = makeTransfer(file);
-        target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        const drop = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt });
+        target.dispatchEvent(drop);
         return 'drop';
-      } catch (err) { console.debug('[AIUse X media] drop attach failed', err); }
+      } catch (err) {
+        console.debug('[AIUse X media] drop attach failed', err);
+      }
       try {
         const dt = makeTransfer(file);
-        target.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+        const paste = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+        target.dispatchEvent(paste);
         return 'paste';
-      } catch (err) { console.debug('[AIUse X media] paste attach failed', err); }
+      } catch (err) {
+        console.debug('[AIUse X media] paste attach failed', err);
+      }
     }
+
     throw new Error('ChatGPT composer upload target not found');
   }
 
@@ -140,7 +171,9 @@
     status.textContent = '取得中…';
     try {
       const blob = await gmFetchBlob(url);
-      if (!blob.type.startsWith('image/')) throw new Error(`image expected, got ${blob.type || 'unknown MIME'}`);
+      if (!blob.type.startsWith('image/')) {
+        throw new Error(`image expected, got ${blob.type || 'unknown MIME'}`);
+      }
       const file = new File([blob], filenameFor(url, index, blob.type), { type: blob.type, lastModified: Date.now() });
       const via = await attachFileToComposer(file);
       status.textContent = `composerへ添付済み (${via})。送信はしていません。`;
@@ -155,6 +188,7 @@
   function buildGallery(payload) {
     const wrap = document.createElement('section');
     wrap.className = 'aiuse-x-media-gallery';
+
     const head = document.createElement('div');
     head.className = 'aiuse-x-media-head';
     const who = payload.author?.screen_name ? `@${payload.author.screen_name}` : (payload.author?.name || 'X post');
@@ -180,11 +214,13 @@
 
     const grid = document.createElement('div');
     grid.className = 'aiuse-x-media-grid';
+
     payload.media.forEach((media, index) => {
       const url = sanitizeUrl(media.url || media.thumbnail_url);
       const card = document.createElement('div');
       card.className = 'aiuse-x-media-card';
       if (isHidden(url)) card.classList.add('aiuse-x-media-hidden');
+
       const img = document.createElement('img');
       img.src = url;
       img.alt = media.alt_text || `${who} media ${index + 1}`;
@@ -194,58 +230,101 @@
       img.addEventListener('error', async () => {
         if (img.dataset.aiuseFallback) return;
         img.dataset.aiuseFallback = '1';
-        try { const blob = await gmFetchBlob(url); img.src = URL.createObjectURL(blob); }
-        catch (err) { console.debug('[AIUse X media] image fallback failed', err); }
+        try {
+          const blob = await gmFetchBlob(url);
+          img.src = URL.createObjectURL(blob);
+        } catch (err) {
+          console.debug('[AIUse X media] image fallback failed', err);
+        }
       });
       card.appendChild(img);
 
       const actions = document.createElement('div');
       actions.className = 'aiuse-x-media-actions';
       const send = document.createElement('button');
-      send.type = 'button'; send.textContent = 'AIへ渡す';
+      send.type = 'button';
+      send.textContent = 'AIへ渡す';
       const hide = document.createElement('button');
-      hide.type = 'button'; hide.textContent = '隠す';
+      hide.type = 'button';
+      hide.textContent = '隠す';
       const open = document.createElement('a');
-      open.href = url; open.target = '_blank'; open.rel = 'noreferrer'; open.textContent = '原寸';
+      open.href = url;
+      open.target = '_blank';
+      open.rel = 'noreferrer';
+      open.textContent = '原寸';
       const status = document.createElement('span');
       status.className = 'aiuse-x-media-status';
+
       send.addEventListener('click', () => attachMedia(media, index, send, status));
-      hide.addEventListener('click', () => { setHidden(url, true); card.classList.add('aiuse-x-media-hidden'); });
+      hide.addEventListener('click', () => {
+        setHidden(url, true);
+        card.classList.add('aiuse-x-media-hidden');
+      });
       actions.append(send, hide, open, status);
       card.appendChild(actions);
       grid.appendChild(card);
     });
+
     wrap.appendChild(grid);
     return wrap;
   }
 
-  function markerHostFor(textNode) {
-    const el = textNode.parentElement;
-    return el ? (el.closest('pre, p, li, div') || el) : null;
+  const INVISIBLE_RE = /[\u200B-\u200D\u2060\uFEFF]/g;
+
+  function markerBlocks(root) {
+    // ChatGPT may split a long marker across several nested spans/text nodes.
+    // Work at block-element textContent level instead of requiring one text node.
+    const blocks = [...root.querySelectorAll('p, pre, li, blockquote, div')].filter(el =>
+      (el.textContent || '').includes(PREFIX)
+    );
+    if ((root.textContent || '').includes(PREFIX)) blocks.push(root);
+    // Smallest block first: marker is emitted as its own line/block.
+    return [...new Set(blocks)].sort((a, b) => (a.textContent || '').length - (b.textContent || '').length);
+  }
+
+  function tokenFromBlock(block) {
+    const text = (block.textContent || '').replace(INVISIBLE_RE, '');
+    const at = text.indexOf(PREFIX);
+    if (at < 0) return null;
+    // The marker is a dedicated line. Strip renderer-inserted whitespace so a
+    // token split across DOM nodes/line wrappers can still be reconstructed.
+    const tail = text.slice(at + PREFIX.length).replace(/\s+/g, '');
+    const m = tail.match(/^([A-Za-z0-9_-]+)/);
+    return m ? m[1] : null;
+  }
+
+  function showMarkerError(block, message) {
+    if (block.querySelector?.('.aiuse-x-media-marker-error')) return;
+    const badge = document.createElement('span');
+    badge.className = 'aiuse-x-media-marker-error aiuse-x-media-badge';
+    badge.textContent = `AIUse marker error: ${message}`;
+    badge.style.marginLeft = '8px';
+    block.appendChild(badge);
   }
 
   function consumeMarkers(root) {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    const nodes = [];
-    while (walker.nextNode()) if (walker.currentNode.nodeValue?.includes(PREFIX)) nodes.push(walker.currentNode);
-    for (const node of nodes) {
-      const text = node.nodeValue;
-      const regex = /AIUSE_X_MEDIA_V1:([A-Za-z0-9_-]+)/g;
-      const matches = [...text.matchAll(regex)];
-      const host = markerHostFor(node);
-      if (!matches.length || !host) continue;
-      for (const match of matches) {
-        const token = match[1];
-        const key = `${PREFIX}${token.slice(0, 24)}`;
-        if (document.querySelector(`[data-aiuse-marker-key="${CSS.escape(key)}"]`)) continue;
-        try {
-          const gallery = buildGallery(parsePayload(token));
-          gallery.dataset.aiuseMarkerKey = key;
-          host.insertAdjacentElement('afterend', gallery);
-        } catch (err) { console.error('[AIUse X media] marker parse failed', err); }
+    if (!root || root.nodeType !== Node.ELEMENT_NODE) return;
+    const seenTokens = new Set();
+    for (const block of markerBlocks(root)) {
+      const token = tokenFromBlock(block);
+      if (!token || seenTokens.has(token)) continue;
+      seenTokens.add(token);
+      const key = `${PREFIX}${token.slice(0, 24)}`;
+      if (document.querySelector(`[data-aiuse-marker-key="${CSS.escape(key)}"]`)) {
+        block.style.display = 'none';
+        continue;
       }
-      node.nodeValue = text.replace(regex, '').trim();
-      if (!host.textContent.trim() && !host.querySelector('img,video,a,button')) host.style.display = 'none';
+      try {
+        const payload = parsePayload(token);
+        const gallery = buildGallery(payload);
+        gallery.dataset.aiuseMarkerKey = key;
+        block.insertAdjacentElement('afterend', gallery);
+        // Marker blocks are transport metadata, not user-facing content.
+        block.style.display = 'none';
+      } catch (err) {
+        console.error('[AIUse X media] marker parse failed', err);
+        showMarkerError(block, err.message || String(err));
+      }
     }
   }
 
@@ -263,8 +342,12 @@
   const observer = new MutationObserver(() => {
     if (scheduled) return;
     scheduled = true;
-    requestAnimationFrame(() => { scheduled = false; scan(); });
+    requestAnimationFrame(() => {
+      scheduled = false;
+      scan();
+    });
   });
+
   observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
   scan();
 })();
