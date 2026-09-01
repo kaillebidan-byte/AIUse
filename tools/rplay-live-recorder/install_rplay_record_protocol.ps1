@@ -34,7 +34,7 @@ New-Item -Path "$regRoot\DefaultIcon" -Force | Out-Null
 Set-Item -Path "$regRoot\DefaultIcon" -Value 'powershell.exe,0'
 New-Item -Path "$regRoot\shell\open\command" -Force | Out-Null
 
-$command = 'powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $installedHandler
+$command = 'powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "{0}" "%1"' -f $installedHandler
 Set-Item -Path "$regRoot\shell\open\command" -Value $command
 
 Write-Host 'RPLAY recorder protocol installed.'
