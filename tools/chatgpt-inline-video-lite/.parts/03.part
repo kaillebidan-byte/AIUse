@@ -1,0 +1,186 @@
+ width: 30px;
+      height: 30px;
+      border: 0;
+      border-radius: 999px;
+      background: rgba(0,0,0,.68);
+      color: #fff;
+      font: 20px/30px system-ui, sans-serif;
+      text-align: center;
+      cursor: pointer;
+    }
+  `;
+
+  const style = document.createElement('style');
+  style.textContent = css;
+  document.documentElement.appendChild(style);
+
+  function safeDecode(value) {
+    try { return decodeURIComponent(value); }
+    catch { return value; }
+  }
+
+  function possibleUrls(raw) {
+    if (!raw) return [];
+
+    const out = new Set();
+    const queue = [String(raw).trim()];
+
+    for (let depth = 0; depth < 4 && queue.length; depth++) {
+      const value = queue.shift();
+      if (!value || out.has(value)) continue;
+      out.add(value);
+
+      // URLが属性値やラベル内に埋まっている場合も拾う。
+      const matches = value.match(/https?:\/\/[^\s"'<>]+/g);
+      if (matches) {
+        for (const match of matches) {
+          if (!out.has(match)) queue.push(match);
+        }
+      }
+
+      // %3A%2F%2F のようにURL全体がencodeされているケース。
+      const decoded = safeDecode(value);
+      if (decoded !== value && !out.has(decoded)) queue.push(decoded);
+
+      let u;
+      try { u = new URL(value, location.href); }
+      catch { continue; }
+
+      // ChatGPT / Google等のredirectラッパーから実URLを取り出す。
+      for (const key of [
+        'url', 'u', 'q', 'target', 'to', 'dest', 'destination',
+        'redirect', 'redirect_url', 'redirect_uri', 'continue'
+      ]) {
+        const nested = u.searchParams.get(key);
+        if (!nested) continue;
+        const nestedDecoded = safeDecode(nested);
+        if (/^https?:\/\//i.test(nestedDecoded) && !out.has(nestedDecoded)) {
+          queue.push(nestedDecoded);
+        }
+      }
+    }
+
+    return [...out];
+  }
+
+  function parseDirectVideo(raw) {
+    let url;
+    try { url = new URL(raw, location.href); }
+    catch { return null; }
+
+    const host = url.hostname.replace(/^www\./, '').toLowerCase();
+
+    // YouTube
+    if (host === 'youtu.be') {
+      const id = url.pathname.split('/').filter(Boolean)[0];
+      if (id) return {
+        kind: 'embed',
+        provider: 'YouTube',
+        key: `youtube:${id}`,
+        embed: `https://www.youtube.com/embed/${encodeURIComponent(id)}`
+      };
+    }
+
+    if (/(^|\.)youtube\.com$/i.test(url.hostname) || /(^|\.)youtube-nocookie\.com$/i.test(url.hostname)) {
+      let id = null;
+      if (url.pathname === '/watch') id = url.searchParams.get('v');
+
+      const m = url.pathname.match(/^\/(?:shorts|live|embed)\/([^/?#]+)/);
+      if (!id && m) id = m[1];
+
+      if (id) return {
+        kind: 'embed',
+        provider: 'YouTube',
+        key: `youtube:${id}`,
+        embed: `https://www.youtube.com/embed/${encodeURIComponent(id)}`
+      };
+    }
+
+    // TikTok: canonical post URL / official player URL -> official Embed Player.
+    // vm.tiktok.com 等の短縮URL解決はこのprobeではまだ行わない。
+    if (/(^|\.)tiktok\.com$/i.test(url.hostname)) {
+      const postMatch = url.pathname.match(/^\/@[^/]+\/video\/(\d+)/i);
+      const playerMatch = url.pathname.match(/^\/player\/v1\/(\d+)/i);
+      const id = postMatch?.[1] || playerMatch?.[1] || null;
+
+      if (id) {
+        const player = new URL(`https://www.tiktok.com/player/v1/${encodeURIComponent(id)}`);
+        player.searchParams.set('autoplay', '0');
+        player.searchParams.set('controls', '1');
+        player.searchParams.set('progress_bar', '1');
+        player.searchParams.set('play_button', '1');
+        player.searchParams.set('volume_control', '1');
+        player.searchParams.set('fullscreen_button', '1');
+        player.searchParams.set('timestamp', '1');
+        player.searchParams.set('muted', '0');
+
+        return {
+          kind: 'embed',
+          provider: 'TikTok',
+          key: `tiktok:${id}`,
+          embed: player.href,
+          popup: player.href,
+          page: postMatch ? url.href : null,
+          popupWidth: 420,
+          popupHeight: 760,
+          inlineProbe: 'tiktok'
+        };
+      }
+    }
+
+    // Bilibili: 通常動画URLを公式external playerへ変換。
+    // 元URLに ?p=N があればmulti-P動画の選択も引き継ぐ。
+    if (/(^|\.)bilibili\.com$/i.test(url.hostname)) {
+      let bvid = null;
+      let aid = null;
+      let page = null;
+
+      const bvMatch = url.pathname.match(/^\/video\/(BV[0-9A-Za-z]+)/i);
+      const avMatch = url.pathname.match(/^\/video\/av(\d+)/i);
+      if (bvMatch) bvid = bvMatch[1];
+      if (avMatch) aid = avMatch[1];
+
+      // player.bilibili.com/player.html?bvid=... / ?aid=... も再利用できる。
+      if (host === 'player.bilibili.com' && url.pathname === '/player.html') {
+        bvid = url.searchParams.get('bvid') || bvid;
+        aid = url.searchParams.get('aid') || aid;
+      }
+
+      const pRaw = url.searchParams.get('p') || url.searchParams.get('page');
+      if (pRaw && /^\d+$/.test(pRaw) && Number(pRaw) >= 1) page = Number(pRaw);
+
+      if (bvid || aid) {
+        const params = new URLSearchParams();
+        if (bvid) params.set('bvid', bvid);
+        else params.set('aid', aid);
+        if (page) params.set('p', String(page));
+        params.set('autoplay', '0');
+        params.set('isOutside', 'true');
+
+        const idKey = bvid ? `bv:${bvid.toLowerCase()}` : `av:${aid}`;
+        const canonical = new URL(
+          bvid
+            ? `https://www.bilibili.com/video/${encodeURIComponent(bvid)}/`
+            : `https://www.bilibili.com/video/av${encodeURIComponent(aid)}/`
+        );
+        if (page) canonical.searchParams.set('p', String(page));
+
+        return {
+          kind: 'popup',
+          provider: 'Bilibili',
+          key: `bilibili:${idKey}:p${page || 1}`,
+          popup: `https://player.bilibili.com/player.html?${params.toString()}`,
+          page: canonical.href,
+          popupWidth: 1280,
+          popupHeight: 720,
+          popupTitle: '公式external playerを小窓で再生',
+          bvid: bvid || null,
+          aid: aid || null,
+          partPage: page || 1
+        };
+      }
+    }
+
+    // b23.tv/BV... のようにBV番号がpathに直接入る短縮形だけは通信なしで扱える。
+    if (host === 'b23.tv') {
+      con
