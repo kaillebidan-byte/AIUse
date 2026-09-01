@@ -1,4 +1,6 @@
-param()
+param(
+  [string]$InvocationUrl = ''
+)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
