@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AIUse ChatGPT Inline X Media
 // @namespace    https://github.com/kaillebidan-byte/AIUse
-// @version      0.1.1
+// @version      0.1.2
 // @description  Render AIUse X media markers inside ChatGPT without sending image pixels to the model; attach selected images to the composer on demand.
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -271,6 +271,22 @@
 
   const INVISIBLE_RE = /[\u200B-\u200D\u2060\uFEFF]/g;
 
+  function markerKey(token) {
+    // Do not dedupe on a token prefix: every marker starts with nearly the
+    // same base64-encoded JSON keys, so prefix keys collide across posts.
+    // Hash the full token instead.
+    let h1 = 0x811c9dc5;
+    let h2 = 0x9e3779b9;
+    for (let i = 0; i < token.length; i++) {
+      const c = token.charCodeAt(i);
+      h1 ^= c;
+      h1 = Math.imul(h1, 0x01000193);
+      h2 ^= c + 0x9e3779b9 + ((h2 << 6) >>> 0) + (h2 >>> 2);
+      h2 >>>= 0;
+    }
+    return `v1-${token.length}-${(h1 >>> 0).toString(36)}-${(h2 >>> 0).toString(36)}`;
+  }
+
   function markerBlocks(root) {
     // ChatGPT may split a long marker across several nested spans/text nodes.
     // Work at block-element textContent level instead of requiring one text node.
@@ -309,7 +325,7 @@
       const token = tokenFromBlock(block);
       if (!token || seenTokens.has(token)) continue;
       seenTokens.add(token);
-      const key = `${PREFIX}${token.slice(0, 24)}`;
+      const key = markerKey(token);
       if (document.querySelector(`[data-aiuse-marker-key="${CSS.escape(key)}"]`)) {
         block.style.display = 'none';
         continue;
