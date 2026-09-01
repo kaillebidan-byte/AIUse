@@ -1,0 +1,42 @@
+name: patch-rplay-live-recipe
+
+on:
+  push:
+    branches:
+      - feat/chatgpt-inline-video-rplay
+    paths:
+      - '.github/workflows/patch-rplay-live-recipe.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Patch canonical RPLAY recipe
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('recipes/rplay-discovery.md')
+          text = p.read_text(encoding='utf-8')
+          marker = '### Current live discovery — follow stateに依存しない\n'
+          if marker not in text:
+              needle = 'Resultは `candidates.jsonl` と `manifest.json`。候補にはkind、content/creator OID、page URL、card text、access class等を含める。\n'
+              if needle not in text:
+                  raise SystemExit('recipe insertion point not found')
+              insert = '''\n### Current live discovery — follow stateに依存しない\n\n現在liveの有無をrendered DOM上の `/live/...` linkで判定しない。RPLAYは未follow creatorのlive導線を画面から省くことがある。\n\n`rplay_search` はcurrent liveについて次を正規経路とする。\n\n1. `GET /live/livestreams` でsite-wideの現在liveを列挙する。\n2. `account/bulkgetusers` でnickname / creatorTags等のsafe metadataを補完し、query relevanceを付ける。\n3. 各current liveだけ `GET /live/play?creatorOid=...` をログイン済みFirefox sessionからmetadata-onlyで照会する。\n4. `streamState` を `live / youtube / twitch / offline` に分類する。\n5. native liveは `accessible / allowAnonymous / tierHashes` から `public / login_viewable / paid_entitled / free_subscription / paid_required / restricted_unknown` を付ける。\n6. `free_subscription` は無料follow/無料join等の0円操作候補として通常shortlistへ残す。実際のfollow mutationは候補選択後まで行わない。\n7. canonical candidate URLは `https://rplay.live/live/<creatorOid>` とし、ChatGPT Inline Video LiteのRPLAY providerへそのまま渡せる形にする。\n\n2026-09-02 smoke (`ASMR`) ではcurrent live 17件を取得し、`public 8 / free_subscription 4 / external_live 4 / login_viewable 1` に分類した。17件すべて追加課金不要でdefault shortlistに残り、ASMR一致liveが先頭へrankされた。\n\nJWT、requestor credential、signed media URL、live keyはbrowser context外へ返さない。\n'''
+              text = text.replace(needle, needle + insert, 1)
+              p.write_text(text, encoding='utf-8')
+
+      - name: Commit recipe correction
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add recipes/rplay-discovery.md
+          git rm .github/workflows/patch-rplay-live-recipe.yml
+          git commit -m 'docs: use global RPLAY current-live discovery'
+          git push origin HEAD:feat/chatgpt-inline-video-rplay
