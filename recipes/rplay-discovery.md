@@ -11,14 +11,14 @@
 
 ## Goal
 
-RPLAYのJS描画・ログイン状態を通常Web検索へ無理に寄せず、ユーザーPCの既存Firefox sessionでDiscoveryし、現在通常閲覧できるmediaだけをローカル保存する。
+RPLAYのJS描画・ログイン状態を通常Web検索へ無理に寄せず、ユーザーPCの既存Firefox sessionでDiscoveryする。保存P0は、公開 `/play` アーカイブを既存RPLAY extractorでfull保存し、live/fileはFirefoxが実際に観測したmediaだけを扱う。
 
 Discoveryとdownloadは別責務にする。
 
 ```text
 natural-language request
   ↓
-RPLAY authenticated Discovery
+RPLAY Firefox-authenticated Discovery
   ↓
 creator / live / file / play candidates
   ↓
@@ -26,11 +26,8 @@ assistant semantic shortlist
   ↓ user selects
 download-requests/*.json
   ↓
-/play public archive: pinned RPLAY-aware yt-dlp primary
-  └─ access/unsupported等 → Firefox observed-media fallback
-/live or /file: Firefox observed-media route
-  ↓
-local media file
+public /play → pinned RPLAY-aware yt-dlp → full save
+live / file   → Firefox observed media → ffmpeg stream copy
   ↓
 %USERPROFILE%\Videos\AIUse\RPLAY\<creator>\
 ```
@@ -52,7 +49,7 @@ private `AIUse-local-control` が使える場合、`research-requests/*.json` �
 
 RPLAYトップをFirefox既存profileで開き、表示中のsearch UIを解決してqueryを投入する。固定の非公開API endpointや検索URLを推測してハードコードしない。
 
-2026-09-02実測では `ASMR` でRPLAY自身の `/search?keyword=ASMR&ct=roleplay&ct=JPchat` へ遷移し、creator候補を取得できた。
+2026-09-02実測では `ASMR` でRPLAY自身の `/search?keyword=ASMR&ct=roleplay&ct=JPchat` へ遷移し、creator候補を取得した。
 
 ### Creator / content page discovery
 
@@ -80,11 +77,11 @@ raw候補をそのままユーザーへ投げず、依頼に合わせてassistan
 - creator名
 - title/card text
 - live / file / play の種別
-- 公開状態を実ページで確認できるか
+- 公開状態
 
 候補URLを保持して、ユーザーが「2番」等で選べる形にする。
 
-## Local save
+## Public archive save — `/play`
 
 ユーザーが保存対象を明示した場合だけ `download-requests/*.json` へ送る。
 
@@ -99,34 +96,42 @@ raw候補をそのままユーザーへ投げず、依頼に合わせてassistan
 }
 ```
 
-`download_local` はRPLAY URLを `download_rplay_request.ps1` へrouteする。
-
-### Primary — public `/play` archive
-
 公開 `/play` はRPLAY extractor実装済みのyt-dlp forkを再利用する。
 
 - upstream yt-dlp PR: `yt-dlp/yt-dlp#10693`（未merge）
 - build: `c-basalt/yt-dlp` release `rplaylive 2026.06.16.175612`
-- Windows binary SHA-256を `6af3efcfc1076b6bcd81b9f68b64367e03b0faef2f925ff98b4afd82c3f7cbc2` に固定検証
-- cache先: `%LOCALAPPDATA%\AIUse\bin\rplay-ytdlp\2026.06.16.175612\`
+- Windows binary SHA-256: `6af3efcfc1076b6bcd81b9f68b64367e03b0faef2f925ff98b4afd82c3f7cbc2`
+- cache: `%LOCALAPPDATA%\AIUse\bin\rplay-ytdlp\2026.06.16.175612\`
 - global yt-dlpは置換しない
 
-このextractorはRPLAY `canView`、HLS、RPLAY固有header/sign、暗号化HLS key取得、DRM判定を既に実装しているため自前再実装しない。DRMと判定されたcontentはfallbackして回避せず停止する。
+このextractorがRPLAY `canView`、HLS、RPLAY固有header/sign、暗号化HLS key取得、DRM判定を実装しているため自前再実装しない。
 
-### Fallback — Firefox observed media
+P0は **full archive saveのみ**。RPLAYの暗号化HLSではyt-dlp `--download-sections` が実測不安定だったため、`max_seconds`等の部分保存は `/play` では拒否する。
 
-primaryでpublic取得できない場合、またはlive/fileでは、ユーザーの既存Firefox sessionで対象pageを通常renderする。
+2026-09-02 verification:
+
+```text
+known-public /play full save: PASS
+backend: rplay-ytdlp-pinned-public
+container: MKV
+bytes: 4,003,977
+duration: 11.517 s
+```
+
+## Live / file save
+
+`/live` または `/file` はユーザーの既存Firefox sessionで対象pageを通常renderし、browserが実際に取得したmediaだけを候補にする。
 
 1. page上のvideo/audioを再生開始する。
-2. `currentSrc` と Performance Resource Timingからbrowserが実際に取得したmedia resourceを観測する。
-3. HTTP-FLV / HLS / MP4等の直接mediaを選ぶ。
+2. `currentSrc` と Performance Resource Timingからmedia resourceを観測する。
+3. HTTP-FLV / HLS / MP4等を選ぶ。
 4. credential付きmedia URLはlocal process内だけに保持する。
 5. `ffmpeg -c copy` でrequest-owned `.part.mkv` へ保存する。
 6. 成功時だけfinal `.mkv`へrenameする。
-7. `ffprobe`でsize/codec/durationを確認しmanifestを出す。
+7. `ffprobe`でsize/codec/durationを確認する。
 8. `open_explorer=true`ならExplorerで保存fileを選択表示する。
 
-ffmpeg stderrはsigned URLをechoし得るためActions logへ継承せずlocal captureする。
+2026-09-02にRPLAY liveのHTTP-FLV → ffmpeg stream copyを手動実証済み。
 
 保存先:
 
@@ -142,35 +147,29 @@ RPLAYの再生resourceはURL queryに一時token、user id、session id等を含
 - research result / download manifestへtokenを保存しない。
 - URLをlog-safe化する際はtoken/userId/session/key類を除去する。
 - Firefox cookie DB / local session secretをartifactへコピーしない。
-- ffmpeg/yt-dlp diagnosticsにcredentialを出さない。
+- ffmpeg stderrはlocal captureし、URLをredactしてから必要最小の診断だけ出す。
 - media binaryをGitHubへcommitしない。
 - feature-branch download smoke resultをmainへ自動publishしない。
 
 ## Access boundary
 
-このrouteはアクセス制御を迂回しない。
+P0はアクセス制御を迂回しない。
 
-- 公開またはユーザーの通常loginで現在閲覧可能 → Discovery / save可。
-- subscriber/member/paywallで現在のaccountに閲覧権がある → Firefox通常page経由で取得できる範囲のみ。
-- 現在のaccountに閲覧権がない → 取得不能として停止。
-- DRMと判定されたcontent → 停止。browser fallbackで回避しない。
-- 配信終了後に権限が変化したcontentを、過去のsigned URL/tokenで再取得する経路にはしない。
-
-## Live note
-
-`/live/<creator-oid>` はFirefoxが観測したHTTP-FLV/HLS等を保存できる。2026-09-02にHTTP-FLV→ffmpeg stream copyを手動実証済み。
-
-ただし現行 `local-download-request` workflowは長時間taskにtimeout上限があるため、P0の主目的はDiscoveryと通常長さのarchive/file保存。長時間liveのdetached recorder化は別contractに分離する。
+- 公開 `/play` → 保存可。
+- login/subscription/member限定 `/play` → P0では保存停止。Firefox loginを使った自動保存は別contract。
+- DRM → 停止。fallback禁止。
+- `/live` / `/file` → 現在ユーザーのFirefoxで通常閲覧でき、browserがmediaを実取得した場合だけ保存候補にする。
+- 終了後に権限が変化したcontentを、過去のsigned URL/tokenで再取得しない。
 
 ## Failure routing
 
-- search input not resolved → browser snapshotで現行UIを確認してselectorを更新。非公開search APIを推測しない。
+- search input not resolved → browser snapshotで現行UIを確認。非公開search APIを推測しない。
 - candidate 0 → query no-resultと候補URL型の未対応を区別する。
-- pinned yt-dlp digest mismatch → 実行せず停止。tag名だけを信頼しない。
-- yt-dlp access failure → 現在Firefoxで通常閲覧できるならobserved-media fallback。権限がなければ停止。
-- DRM → 停止。fallback禁止。
-- media resource not detected → page上で実再生できるか確認し、Performance Resource Timing / media currentSrcの変化を再probeする。
-- ffmpeg 401/403 → signed URL期限切れやaccess状態変化を疑い、Firefox pageから新規resourceを取り直す。同じexpired URLを反復しない。
+- pinned yt-dlp digest mismatch → 実行せず停止。
+- public `/play` access failure → login/subscription archiveとして停止。generic media fallbackへ流さない。
+- DRM → 停止。
+- media resource not detected → page上で実再生できるか確認し、Performance Resource Timing / media currentSrcを再probeする。
+- ffmpeg 401/403 → pageから新規resourceを取り直す。同じexpired URLを反復しない。
 
 ## Completion
 
@@ -184,7 +183,7 @@ Discovery:
 Download:
 
 - ユーザーが選んだpage URLと対応している。
-- public `/play`ならpinned extractor、必要時だけFirefox fallbackを使った。
+- 公開 `/play` はpinned extractorでfull保存した。
 - final fileが存在しsize > 0。
 - ffprobe結果を確認した。
 - media/tokenをGitHubへ返していない。
