@@ -9,7 +9,7 @@ from pathlib import Path
 PREFIX = "AIUSE_X_MEDIA_V1:"
 
 
-def image_media(items):
+def preview_media(items):
     out = []
     for item in items or []:
         if not isinstance(item, dict):
@@ -18,8 +18,6 @@ def image_media(items):
         if typ.startswith("mosaic") or typ == "external":
             continue
         url = item.get("url") or item.get("thumbnail_url")
-        if typ.startswith("video"):
-            url = item.get("thumbnail_url")
         if not isinstance(url, str) or not url.startswith("https://"):
             continue
         out.append({
@@ -39,7 +37,7 @@ def marker(data: dict) -> str:
         "post_url": data.get("url") or data.get("post_url"),
         "author": data.get("author") or {},
         "possibly_sensitive": bool(data.get("possibly_sensitive")),
-        "media": image_media(data.get("media")),
+        "media": preview_media(data.get("media")),
     }
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     token = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
