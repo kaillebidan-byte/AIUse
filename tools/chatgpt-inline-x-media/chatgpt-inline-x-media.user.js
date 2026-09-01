@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AIUse ChatGPT Inline X Media
 // @namespace    https://github.com/kaillebidan-byte/AIUse
-// @version      0.2.0
-// @description  Render AIUse X image/video markers inside ChatGPT; optionally attach selected media to the composer.
+// @version      0.2.1
+// @description  Render AIUse X image/video markers inside ChatGPT; only user-preview media can be promoted to the composer.
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
 // @downloadURL  https://raw.githubusercontent.com/kaillebidan-byte/AIUse/main/tools/chatgpt-inline-x-media/chatgpt-inline-x-media.user.js
@@ -255,7 +255,7 @@
     head.className = 'aiuse-x-media-head';
     const who = payload.author?.screen_name ? `@${payload.author.screen_name}` : (payload.author?.name || 'X post');
     const title = document.createElement('span');
-    title.textContent = `${who} · ${payload.media.length} media · v0.2.0`;
+    title.textContent = `${who} · ${payload.media.length} media · v0.2.1`;
     head.appendChild(title);
     if (payload.possibly_sensitive) {
       const badge = document.createElement('span');
@@ -276,6 +276,7 @@
 
     const grid = document.createElement('div');
     grid.className = 'aiuse-x-media-grid';
+    const canPromote = (payload.delivery || 'user_preview') === 'user_preview';
 
     payload.media.forEach((media, index) => {
       const url = sanitizeUrl(media.url || media.thumbnail_url);
@@ -288,9 +289,12 @@
 
       const actions = document.createElement('div');
       actions.className = 'aiuse-x-media-actions';
-      const send = document.createElement('button');
-      send.type = 'button';
-      send.textContent = 'AIへ渡す';
+      let send = null;
+      if (canPromote) {
+        send = document.createElement('button');
+        send.type = 'button';
+        send.textContent = 'AIへ渡す';
+      }
       const hide = document.createElement('button');
       hide.type = 'button';
       hide.textContent = '隠す';
@@ -302,12 +306,15 @@
       const status = document.createElement('span');
       status.className = 'aiuse-x-media-status';
 
-      send.addEventListener('click', () => attachMedia(media, index, send, status));
+      if (send) {
+        send.addEventListener('click', () => attachMedia(media, index, send, status));
+        actions.appendChild(send);
+      }
       hide.addEventListener('click', () => {
         setHidden(url, true);
         card.classList.add('aiuse-x-media-hidden');
       });
-      actions.append(send, hide, open, status);
+      actions.append(hide, open, status);
       card.appendChild(actions);
       grid.appendChild(card);
     });
