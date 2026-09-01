@@ -1,20 +1,10 @@
 name: x-post-media-bridge
 
 on:
-  push:
-    paths:
-      - ".github/workflows/smoke-x-post-resolver.yml"
-      - "tools/x-post-resolver/**"
   pull_request:
     paths:
       - ".github/workflows/smoke-x-post-resolver.yml"
       - "tools/x-post-resolver/**"
-  workflow_dispatch:
-    inputs:
-      x_url:
-        description: "Public X/Twitter status URL; blank uses tools/x-post-resolver/request-url.txt"
-        required: false
-        type: string
 
 jobs:
   live-media:
@@ -27,76 +17,59 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: python -m pip install -r tools/x-post-resolver/requirements.txt
-      - name: Resolve requested X post
-        env:
-          DISPATCH_URL: ${{ github.event.inputs.x_url }}
+      - name: Resolve and download public video posts
         run: |
           python - <<'PY'
-          import os
-          from pathlib import Path
-          u=(os.environ.get('DISPATCH_URL') or '').strip()
-          if not u:
-              u=Path('tools/x-post-resolver/request-url.txt').read_text(encoding='utf-8').strip()
-          if not u:
-              raise SystemExit('No X URL supplied')
-          Path('/tmp/x-url.txt').write_text(u, encoding='utf-8')
-          print('request_url=', u)
-          PY
-          python tools/x-post-resolver/x_post_resolver.py \
-            "$(cat /tmp/x-url.txt)" \
-            --json -o /tmp/x-post.json
-          cat /tmp/x-post.json
-      - name: Assert normalized photo output
-        run: |
-          python - <<'PY'
-          import json,re
-          from pathlib import Path
-          d=json.loads(Path('/tmp/x-post.json').read_text(encoding='utf-8'))
-          u=Path('/tmp/x-url.txt').read_text(encoding='utf-8').strip()
-          m=re.search(r'/status/(\d+)',u)
-          assert m, u
-          assert d['id'] == m.group(1), d
-          assert d.get('text'), d
-          assert (d.get('author') or {}).get('screen_name'), d
-          photos=[m for m in (d.get('media') or []) if m.get('type') == 'photo' and m.get('url')]
-          assert photos, d
-          print('BRIDGE INPUT PASS')
-          print('author=', d['author']['screen_name'])
-          print('photo_count=', len(photos))
-          PY
-      - name: Download resolved photo media
-        run: |
-          python - <<'PY'
-          import json
+          import json, re, subprocess
           from pathlib import Path
           import requests
-          d=json.loads(Path('/tmp/x-post.json').read_text(encoding='utf-8'))
-          out=Path('/tmp/x-post-media')
-          out.mkdir(parents=True, exist_ok=True)
-          photos=[m for m in (d.get('media') or []) if m.get('type') == 'photo' and m.get('url')]
+
+          urls=[x.strip() for x in Path('tools/x-post-resolver/request-urls.txt').read_text(encoding='utf-8').splitlines() if x.strip()]
+          out=Path('/tmp/x-post-media'); out.mkdir(parents=True, exist_ok=True)
           manifest=[]
-          for i,m in enumerate(photos,1):
-              r=requests.get(m['url'], timeout=30)
+
+          def raw_mp4(status_id):
+              r=requests.get(f'https://api.fxtwitter.com/2/status/{status_id}', timeout=20)
+              r.raise_for_status()
+              data=r.json()
+              found=[]
+              def walk(x):
+                  if isinstance(x, dict):
+                      if x.get('content_type') == 'video/mp4' and isinstance(x.get('url'), str):
+                          found.append((int(x.get('bitrate') or 0), x['url']))
+                      for v in x.values(): walk(v)
+                  elif isinstance(x, list):
+                      for v in x: walk(v)
+              walk(data)
+              if not found:
+                  return None
+              found.sort(key=lambda z:z[0])
+              return found[-1][1]
+
+          for i,u in enumerate(urls,1):
+              p=out/f'post_{i}.json'
+              subprocess.run(['python','tools/x-post-resolver/x_post_resolver.py',u,'--json','-o',str(p)],check=True)
+              d=json.loads(p.read_text(encoding='utf-8'))
+              sid=re.search(r'/status/(\d+)',u).group(1)
+              assert d.get('id') == sid, d
+              media=d.get('media') or []
+              candidates=[m.get('url') for m in media if isinstance(m,dict) and isinstance(m.get('url'),str) and ('video.twimg.com' in m['url'] or re.search(r'\.mp4(?:$|[?])',m['url']))]
+              video_url=candidates[0] if candidates else raw_mp4(sid)
+              assert video_url, {'url':u,'normalized_media':media}
+              r=requests.get(video_url,timeout=30)
               r.raise_for_status()
               ctype=(r.headers.get('content-type') or '').split(';',1)[0].strip().lower()
-              ext={
-                  'image/jpeg': '.jpg',
-                  'image/png': '.png',
-                  'image/webp': '.webp',
-                  'image/gif': '.gif',
-              }.get(ctype, '.bin')
-              p=out / f'photo_{i}{ext}'
-              p.write_bytes(r.content)
-              manifest.append({'file':p.name,'url':m['url'],'content_type':ctype,'bytes':len(r.content)})
+              assert ctype.startswith('video/') or '.mp4' in video_url, (ctype,video_url)
+              f=out/f'video_{i}.mp4'; f.write_bytes(r.content)
+              manifest.append({'index':i,'post_url':u,'post_text':d.get('text'),'author':d.get('author'),'file':f.name,'media_url':video_url,'content_type':ctype,'bytes':len(r.content)})
+              print('PASS', i, u, len(r.content), video_url)
+
           (out/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
-          (out/'post.json').write_text(json.dumps(d,ensure_ascii=False,indent=2),encoding='utf-8')
-          (out/'request-url.txt').write_text(Path('/tmp/x-url.txt').read_text(encoding='utf-8'),encoding='utf-8')
-          print((out/'manifest.json').read_text(encoding='utf-8'))
           PY
       - name: Upload X media artifact
         uses: actions/upload-artifact@v4
         with:
-          name: x-post-resolver-live-media
+          name: public-2d-video-batch
           path: /tmp/x-post-media/
           if-no-files-found: error
           retention-days: 1
