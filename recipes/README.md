@@ -16,7 +16,8 @@ toolが**取得・変換の実装**、recipeが**routing・作業完了条件・
 | [twitch-archive-discovery.md](twitch-archive-discovery.md) | Twitch archive候補発見→shortlist→PC保存 | VOD URL発見だけ |
 | [youtube-video-discovery.md](youtube-video-discovery.md) | YouTube native search→shortlist→PC保存 | search result URLだけ |
 | [reddit-research.md](reddit-research.md) | Redditの評判・体験談・雑談を拾う | 検索結果タイトルだけ |
-| [x-image-research.md](x-image-research.md) | Xで画像を探し、投稿・画像を本文提示する | post URL / media URLだけ |
+| [x-media-research.md](x-media-research.md) | Xで画像/動画/GIFを探し、assistant visual inspection後に本文提示する | metadataだけ / post URLだけ |
+| [x-image-research.md](x-image-research.md) | 旧X画像recipe名からcanonical X media recipeへ誘導 | 旧user-preview前提へ戻ること |
 | [futaba-archive-research.md](futaba-archive-research.md) | ふたばの消滅済み/URL不明スレを過去ログから探す | 一般Web検索0件 / 候補URLだけ |
 | [source-deep-dive.md](source-deep-dive.md) | ふたば/X/Reddit/GitHub等を横断して過去事例を深掘り | 最初に見つけた1 sourceだけ |
 
@@ -41,4 +42,4 @@ Whisper/STT、全文transcript、frame extraction、media-mcp等は計算・転�
 - PC保存を求めたらlocal fileの存在まで確認する。
 - UI表示そのものが要求された場合は実際に表示されるところまで進める。
 
-X画像提示ではURLだけでなく最終回答内の実画像表示まで。ふたば過去ログでは候補発見だけでなく取得可能なarchive本文まで確認する。
+X mediaのvisual-reference探索では、最終候補をmetadataだけで決めず、必要な実画像/動画frameをassistantが確認する。Firefox-authは取得方法であり、assistant inspectionの禁止を意味しない。
