@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AIUse ChatGPT Inline X Media
 // @namespace    https://github.com/kaillebidan-byte/AIUse
-// @version      0.2.1
-// @description  Render AIUse X image/video markers inside ChatGPT; only user-preview media can be promoted to the composer.
+// @version      0.3.0
+// @description  Render AIUse X image/video presentation markers; access, model inspection, and presentation are separate concerns.
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
 // @downloadURL  https://raw.githubusercontent.com/kaillebidan-byte/AIUse/main/tools/chatgpt-inline-x-media/chatgpt-inline-x-media.user.js
@@ -20,6 +20,7 @@
   const PROCESSED = 'data-aiuse-x-media-processed';
   const HIDDEN_PREFIX = 'aiuse-x-media-hidden:';
   const STYLE_ID = 'aiuse-x-media-style';
+  const INVISIBLE_RE = /[\u200B-\u200D\u2060\uFEFF]/g;
 
   function ensureStyle() {
     if (document.getElementById(STYLE_ID)) return;
@@ -27,11 +28,12 @@
     style.id = STYLE_ID;
     style.textContent = `
       .aiuse-x-media-gallery{margin:12px 0;padding:10px;border:1px solid color-mix(in srgb,currentColor 18%,transparent);border-radius:14px;background:color-mix(in srgb,currentColor 4%,transparent)}
-      .aiuse-x-media-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:12px;opacity:.8}
+      .aiuse-x-media-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:12px;opacity:.82}
       .aiuse-x-media-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
       .aiuse-x-media-card{overflow:hidden;border:1px solid color-mix(in srgb,currentColor 15%,transparent);border-radius:12px;background:color-mix(in srgb,currentColor 3%,transparent)}
       .aiuse-x-media-card img,.aiuse-x-media-card video{display:block;width:100%;max-height:520px;object-fit:contain;background:#111}
       .aiuse-x-media-card img{cursor:zoom-in}
+      .aiuse-x-media-meta{padding:7px 8px 0;font-size:11px;opacity:.72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .aiuse-x-media-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px}
       .aiuse-x-media-actions button,.aiuse-x-media-actions a{font:inherit;font-size:12px;line-height:1.2;padding:6px 9px;border-radius:8px;border:1px solid color-mix(in srgb,currentColor 22%,transparent);background:transparent;color:inherit;text-decoration:none;cursor:pointer}
       .aiuse-x-media-actions button:hover,.aiuse-x-media-actions a:hover{background:color-mix(in srgb,currentColor 8%,transparent)}
@@ -52,10 +54,24 @@
 
   function parsePayload(token) {
     const payload = JSON.parse(decodeBase64Url(token));
-    if (!payload || payload.v !== 1 || !Array.isArray(payload.media)) {
+    if (!payload || ![1, 2].includes(payload.v) || !Array.isArray(payload.media)) {
       throw new Error('unsupported AIUse X media payload');
     }
     return payload;
+  }
+
+  function policyFor(payload) {
+    if (payload.v >= 2) {
+      return {
+        access: payload.access || 'unknown',
+        inspection: payload.inspection || 'user_only',
+        presentation: payload.presentation || 'preview',
+      };
+    }
+    if (payload.delivery === 'public_inline') {
+      return { access: 'public', inspection: 'assistant', presentation: 'inline' };
+    }
+    return { access: 'unknown', inspection: 'user_only', presentation: 'preview' };
   }
 
   function sanitizeUrl(raw) {
@@ -64,14 +80,10 @@
     return u.href;
   }
 
-  function hiddenKey(url) {
-    return HIDDEN_PREFIX + url;
-  }
-
+  function hiddenKey(url) { return HIDDEN_PREFIX + url; }
   function isHidden(url) {
     try { return sessionStorage.getItem(hiddenKey(url)) === '1'; } catch { return false; }
   }
-
   function setHidden(url, hidden) {
     try {
       if (hidden) sessionStorage.setItem(hiddenKey(url), '1');
@@ -86,7 +98,7 @@
     return 'image';
   }
 
-  function filenameFor(url, index, mime='') {
+  function filenameFor(url, index, mime = '') {
     try {
       const u = new URL(url);
       let name = u.pathname.split('/').pop() || `x-media-${index + 1}`;
@@ -109,10 +121,7 @@
   function gmFetchBlob(url) {
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
-        method: 'GET',
-        url,
-        responseType: 'blob',
-        timeout: 30000,
+        method: 'GET', url, responseType: 'blob', timeout: 45000,
         onload: res => {
           if (res.status >= 200 && res.status < 300 && res.response) resolve(res.response);
           else reject(new Error(`media fetch HTTP ${res.status}`));
@@ -154,27 +163,23 @@
         console.debug('[AIUse X media] file input attach failed', err);
       }
     }
-
     const target = composerTarget();
     if (target) {
       try {
         const dt = makeTransfer(file);
-        const drop = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt });
-        target.dispatchEvent(drop);
+        target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
         return 'drop';
       } catch (err) {
         console.debug('[AIUse X media] drop attach failed', err);
       }
       try {
         const dt = makeTransfer(file);
-        const paste = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
-        target.dispatchEvent(paste);
+        target.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
         return 'paste';
       } catch (err) {
         console.debug('[AIUse X media] paste attach failed', err);
       }
     }
-
     throw new Error('ChatGPT composer upload target not found');
   }
 
@@ -186,11 +191,8 @@
     try {
       let blob = await gmFetchBlob(url);
       if (!blob.type.startsWith('image/') && !blob.type.startsWith('video/')) {
-        if (kind === 'video' && /\.mp4(?:$|[?#])/i.test(url)) {
-          blob = blob.slice(0, blob.size, 'video/mp4');
-        } else {
-          throw new Error(`unsupported MIME: ${blob.type || 'unknown'}`);
-        }
+        if (kind === 'video' && /\.mp4(?:$|[?#])/i.test(url)) blob = blob.slice(0, blob.size, 'video/mp4');
+        else throw new Error(`unsupported MIME: ${blob.type || 'unknown'}`);
       }
       const file = new File([blob], filenameFor(url, index, blob.type), { type: blob.type, lastModified: Date.now() });
       const via = await attachFileToComposer(file);
@@ -213,12 +215,8 @@
     img.addEventListener('error', async () => {
       if (img.dataset.aiuseFallback) return;
       img.dataset.aiuseFallback = '1';
-      try {
-        const blob = await gmFetchBlob(url);
-        img.src = URL.createObjectURL(blob);
-      } catch (err) {
-        console.debug('[AIUse X media] image fallback failed', err);
-      }
+      try { img.src = URL.createObjectURL(await gmFetchBlob(url)); }
+      catch (err) { console.debug('[AIUse X media] image fallback failed', err); }
     });
     return img;
   }
@@ -237,8 +235,7 @@
       if (video.dataset.aiuseFallback) return;
       video.dataset.aiuseFallback = '1';
       try {
-        const blob = await gmFetchBlob(url);
-        video.src = URL.createObjectURL(blob);
+        video.src = URL.createObjectURL(await gmFetchBlob(url));
         video.load();
       } catch (err) {
         console.debug('[AIUse X media] video fallback failed', err);
@@ -247,20 +244,41 @@
     return video;
   }
 
+  function mediaWho(media, fallback) {
+    const author = media?.author;
+    if (author?.screen_name) return `@${author.screen_name}`;
+    if (author?.name) return author.name;
+    return fallback;
+  }
+
   function buildGallery(payload) {
+    const policy = policyFor(payload);
     const wrap = document.createElement('section');
     wrap.className = 'aiuse-x-media-gallery';
 
     const head = document.createElement('div');
     head.className = 'aiuse-x-media-head';
-    const who = payload.author?.screen_name ? `@${payload.author.screen_name}` : (payload.author?.name || 'X post');
+    const who = payload.author?.screen_name ? `@${payload.author.screen_name}` : (payload.author?.name || 'X media');
     const title = document.createElement('span');
-    title.textContent = `${who} · ${payload.media.length} media · v0.2.1`;
+    title.textContent = `${who} · ${payload.media.length} media · v0.3.0`;
     head.appendChild(title);
+
     if (payload.possibly_sensitive) {
       const badge = document.createElement('span');
       badge.className = 'aiuse-x-media-badge';
       badge.textContent = 'X sensitive';
+      head.appendChild(badge);
+    }
+    if (policy.access === 'firefox_auth') {
+      const badge = document.createElement('span');
+      badge.className = 'aiuse-x-media-badge';
+      badge.textContent = 'Firefox auth';
+      head.appendChild(badge);
+    }
+    if (policy.inspection === 'user_only') {
+      const badge = document.createElement('span');
+      badge.className = 'aiuse-x-media-badge';
+      badge.textContent = 'user-only preview';
       head.appendChild(badge);
     }
     if (payload.post_url) {
@@ -276,7 +294,7 @@
 
     const grid = document.createElement('div');
     grid.className = 'aiuse-x-media-grid';
-    const canPromote = (payload.delivery || 'user_preview') === 'user_preview';
+    const canPromote = policy.inspection === 'user_only';
 
     payload.media.forEach((media, index) => {
       const url = sanitizeUrl(media.url || media.thumbnail_url);
@@ -284,37 +302,55 @@
       const card = document.createElement('div');
       card.className = 'aiuse-x-media-card';
       if (isHidden(url)) card.classList.add('aiuse-x-media-hidden');
-
       card.appendChild(kind === 'video' ? videoElement(media, url) : imageElement(media, url, who, index));
+
+      const cardWho = mediaWho(media, who);
+      if (cardWho !== who || media.text) {
+        const meta = document.createElement('div');
+        meta.className = 'aiuse-x-media-meta';
+        meta.textContent = media.text ? `${cardWho} · ${media.text}` : cardWho;
+        card.appendChild(meta);
+      }
 
       const actions = document.createElement('div');
       actions.className = 'aiuse-x-media-actions';
-      let send = null;
+      const status = document.createElement('span');
+      status.className = 'aiuse-x-media-status';
+
       if (canPromote) {
-        send = document.createElement('button');
+        const send = document.createElement('button');
         send.type = 'button';
         send.textContent = 'AIへ渡す';
+        send.addEventListener('click', () => attachMedia(media, index, send, status));
+        actions.appendChild(send);
       }
+
       const hide = document.createElement('button');
       hide.type = 'button';
       hide.textContent = '隠す';
+      hide.addEventListener('click', () => {
+        setHidden(url, true);
+        card.classList.add('aiuse-x-media-hidden');
+      });
+      actions.appendChild(hide);
+
       const open = document.createElement('a');
       open.href = url;
       open.target = '_blank';
       open.rel = 'noreferrer';
       open.textContent = kind === 'video' ? '動画' : '原寸';
-      const status = document.createElement('span');
-      status.className = 'aiuse-x-media-status';
+      actions.appendChild(open);
 
-      if (send) {
-        send.addEventListener('click', () => attachMedia(media, index, send, status));
-        actions.appendChild(send);
+      const postUrl = media.post_url || payload.post_url;
+      if (postUrl && postUrl !== payload.post_url) {
+        const post = document.createElement('a');
+        post.href = postUrl;
+        post.target = '_blank';
+        post.rel = 'noreferrer';
+        post.textContent = '元post';
+        actions.appendChild(post);
       }
-      hide.addEventListener('click', () => {
-        setHidden(url, true);
-        card.classList.add('aiuse-x-media-hidden');
-      });
-      actions.append(hide, open, status);
+      actions.appendChild(status);
       card.appendChild(actions);
       grid.appendChild(card);
     });
@@ -322,8 +358,6 @@
     wrap.appendChild(grid);
     return wrap;
   }
-
-  const INVISIBLE_RE = /[\u200B-\u200D\u2060\uFEFF]/g;
 
   function markerKey(token) {
     let h1 = 0x811c9dc5;
@@ -335,13 +369,11 @@
       h2 ^= c + 0x9e3779b9 + ((h2 << 6) >>> 0) + (h2 >>> 2);
       h2 >>>= 0;
     }
-    return `v1-${token.length}-${(h1 >>> 0).toString(36)}-${(h2 >>> 0).toString(36)}`;
+    return `x-${token.length}-${(h1 >>> 0).toString(36)}-${(h2 >>> 0).toString(36)}`;
   }
 
   function markerBlocks(root) {
-    const all = [...root.querySelectorAll('p, pre, li, blockquote, div')].filter(el =>
-      (el.textContent || '').includes(PREFIX)
-    );
+    const all = [...root.querySelectorAll('p, pre, li, blockquote, div')].filter(el => (el.textContent || '').includes(PREFIX));
     if ((root.textContent || '').includes(PREFIX)) all.push(root);
     const unique = [...new Set(all)];
     return unique
@@ -354,8 +386,8 @@
     const at = text.indexOf(PREFIX);
     if (at < 0) return null;
     const tail = text.slice(at + PREFIX.length).replace(/\s+/g, '');
-    const m = tail.match(/^([A-Za-z0-9_-]+)/);
-    return m ? m[1] : null;
+    const match = tail.match(/^([A-Za-z0-9_-]+)/);
+    return match ? match[1] : null;
   }
 
   function showMarkerError(block, message) {
@@ -376,12 +408,11 @@
       seenTokens.add(token);
       const key = markerKey(token);
       if (document.querySelector(`[data-aiuse-marker-key="${CSS.escape(key)}"]`)) {
-        block.style.display = 'none';
+        if ((block.textContent || '').trim().startsWith(PREFIX)) block.style.display = 'none';
         continue;
       }
       try {
-        const payload = parsePayload(token);
-        const gallery = buildGallery(payload);
+        const gallery = buildGallery(parsePayload(token));
         gallery.dataset.aiuseMarkerKey = key;
         block.insertAdjacentElement('afterend', gallery);
         block.style.display = 'none';
