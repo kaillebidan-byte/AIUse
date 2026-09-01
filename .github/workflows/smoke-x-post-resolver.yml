@@ -46,7 +46,7 @@ jobs:
             "$(cat /tmp/x-url.txt)" \
             --json -o /tmp/x-post.json
           cat /tmp/x-post.json
-      - name: Assert normalized photo output
+      - name: Assert normalized media output
         run: |
           python - <<'PY'
           import json,re
@@ -58,13 +58,14 @@ jobs:
           assert d['id'] == m.group(1), d
           assert d.get('text'), d
           assert (d.get('author') or {}).get('screen_name'), d
-          photos=[m for m in (d.get('media') or []) if m.get('type') == 'photo' and m.get('url')]
-          assert photos, d
+          media=[m for m in (d.get('media') or []) if m.get('url')]
+          assert media, d
           print('BRIDGE INPUT PASS')
           print('author=', d['author']['screen_name'])
-          print('photo_count=', len(photos))
+          print('media_count=', len(media))
+          print('media_types=', [m.get('type') for m in media])
           PY
-      - name: Download resolved photo media
+      - name: Download resolved media
         run: |
           python - <<'PY'
           import json
@@ -73,21 +74,20 @@ jobs:
           d=json.loads(Path('/tmp/x-post.json').read_text(encoding='utf-8'))
           out=Path('/tmp/x-post-media')
           out.mkdir(parents=True, exist_ok=True)
-          photos=[m for m in (d.get('media') or []) if m.get('type') == 'photo' and m.get('url')]
+          media=[m for m in (d.get('media') or []) if m.get('url')]
           manifest=[]
-          for i,m in enumerate(photos,1):
+          extmap={
+              'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif',
+              'video/mp4': '.mp4', 'video/webm': '.webm', 'application/vnd.apple.mpegurl': '.m3u8',
+          }
+          for i,m in enumerate(media,1):
               r=requests.get(m['url'], timeout=30)
               r.raise_for_status()
               ctype=(r.headers.get('content-type') or '').split(';',1)[0].strip().lower()
-              ext={
-                  'image/jpeg': '.jpg',
-                  'image/png': '.png',
-                  'image/webp': '.webp',
-                  'image/gif': '.gif',
-              }.get(ctype, '.bin')
-              p=out / f'photo_{i}{ext}'
+              ext=extmap.get(ctype, '.bin')
+              p=out / f'media_{i}{ext}'
               p.write_bytes(r.content)
-              manifest.append({'file':p.name,'url':m['url'],'content_type':ctype,'bytes':len(r.content)})
+              manifest.append({'file':p.name,'type':m.get('type'),'url':m['url'],'thumbnail_url':m.get('thumbnail_url'),'content_type':ctype,'bytes':len(r.content)})
           (out/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
           (out/'post.json').write_text(json.dumps(d,ensure_ascii=False,indent=2),encoding='utf-8')
           (out/'request-url.txt').write_text(Path('/tmp/x-url.txt').read_text(encoding='utf-8'),encoding='utf-8')
