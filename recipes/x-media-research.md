@@ -2,17 +2,37 @@
 
 ## Trigger
 
-次の依頼では検索・回答前にこのrecipeを読む。
+Xの画像 / 動画 / GIF / 2D animationを探す、比較する、本文に載せる依頼で読む。
 
-- Xから画像 / 動画 / GIF / 2D animationを探す
-- Xのmediaを本文に載せる、再生する
-- X上の複数mediaを見比べて類似候補を探す
-- login-required / sensitive Xも含めて深く探す
-- 「この動画に似た動きを探す」のようなvisual-reference探索
+## First rule — ordinary media stays ordinary
 
-## Core rule — three axes are independent
+**「画像を探して」「この作者の画像を何枚か」のような普通の依頼で、local runner / Firefox-auth / inspection ZIP / dense frame解析を標準起動しない。**
 
-X mediaは必ず次の3軸を分離して扱う。
+通常の公開mediaは、まず通常のWeb / image search / X公開resolverで探し、必要な候補だけ見る。
+
+```text
+ordinary public image/video request
+  ↓
+normal Web / image / X public discovery
+  ↓
+assistantが必要な候補を確認
+  ↓
+通常表示またはinline marker
+```
+
+重い経路を使うのは、通常経路では目的を満たせない時だけ。
+
+例:
+
+- X loginが必要
+- public searchでは候補が不足する
+- sensitive表示を含む深掘りが必要
+- 多数動画を実frameで比較してquality / similarity rerankする必要がある
+- ユーザーが明示的に深掘りを要求した
+
+## Media state
+
+必要な場合だけ次の3軸を独立して記録する。
 
 ```text
 access        = public | firefox_auth
@@ -20,207 +40,22 @@ inspection    = assistant | user_only
 presentation  = none | inline | preview
 ```
 
-- `access`: mediaを取得した方法。
-- `inspection`: 探索・比較中にassistantが実pixel/frameを見たか。
-- `presentation`: 最終回答でユーザーへどう見せるか。
+- `access`: 取得方法。
+- `inspection`: assistantが実pixel/frameを見たか。
+- `presentation`: ユーザーへどう表示するか。
 
-**禁止する誤結合:**
+次を自動的に同一視しない。
 
 - `firefox_auth => user_only`
 - `possibly_sensitive => user_only`
 - `adult account => user_only`
 - `inline表示 => assistantも見た`
 
-Firefoxのcookie/tokenはlocal PCに留め、取得済みmediaだけをassistant inspectionへ渡せる。
+Firefox cookie / tokenはlocal PCに留める。
 
-## Default research path
+## Normal route
 
-visual similarityやanimation qualityが目的なら、public / Firefox-authを問わず、扱える候補はassistantが実mediaを見てrerankする。
-
-```text
-X discovery
-  ├─ keyword/query recall
-  ├─ known-good seed creator/post
-  └─ Firefox-auth graph/timeline discovery
-          ↓
-metadata recall
-          ↓
-明らかなノイズを除く
-          ↓
-assistant inspection batch
-  ├─ image binary
-  └─ video MP4 + representative contact sheet
-          ↓
-assistant visual rerank
-          ↓
-有望候補だけdense inspection / 再検索
-          ↓
-final candidates
-          ↓
-presentation marker
-```
-
-投稿文・bioだけで最終的なvisual類似度を決めない。
-
-## Discovery strategy
-
-### 1. `strategy=query` — broad recall
-
-まだ良いcreator/postが1件も無い時に使う。
-
-```json
-{
-  "mode": "x_search",
-  "strategy": "query",
-  "query": "pixel animation filter:videos",
-  "limit": 50,
-  "inspection": "assistant",
-  "presentation": "none"
-}
-```
-
-keyword queryは**候補発見用**であり最終rankingではない。`18+`, `NSFW`, `WIP`などを厳しくANDするほど品質が上がるとは限らない。実測では数字や無関係な語に引っ張られるfalse positiveが出た。
-
-### 2. `strategy=seed_graph` — preferred after a good seed exists
-
-人間が良い作家/作品を1件見つけた後の探索に近いroute。
-
-```text
-known-good creator
-  ↓ x-cli timeline --media
-そのcreatorのmedia
-  ↓
-following graph
-  ↓
-プロフィール語彙で関連creatorをrecall
-  ↓ x-cli timeline --media
-各creatorのmedia
-  ↓
-assistant visual inspection
-```
-
-request例:
-
-```json
-{
-  "mode": "x_search",
-  "strategy": "seed_graph",
-  "seeds": ["creatorA", "creatorB"],
-  "seed_timeline_limit": 30,
-  "network_limit": 120,
-  "neighbor_limit": 12,
-  "neighbor_timeline_limit": 12,
-  "inspection": "assistant",
-  "presentation": "none",
-  "inspection_candidate_limit": 20,
-  "inspection_frame_count": 8
-}
-```
-
-profile filteringはrecallだけに使う。成人向けcreator探索なら `NSFW`, `18+`, `no minors` 等と `animator`, `Live2D`, `pixel`, `artist` 等を使えるが、**最終採否は実mediaを見て決める**。
-
-verified 2026-09-01 smoke:
-
-```text
-2 seeds
-seed media timelines: 30 + 30
-following scanned: 120 + 120
-related creators retained: 12
-candidate media posts: 192
-assistant inspection batch: 20 media
-```
-
-実inspectionでは同じ成人向けcreator timeline内にもanimation referenceとして有用な作品と、単なるmeme/reaction clipが混在した。したがってgraph/profileだけで終了せずvisual rerankが必要。
-
-x-cli自身の `timeline --media`, `following`, `discover/crawl` を優先して使い、自前crawlerを再発明しない。
-
-## Firefox-auth assistant inspection
-
-private `AIUse-local-control` の `x_search` requestは次を受ける。
-
-```json
-{
-  "mode": "x_search",
-  "strategy": "query",
-  "query": "...",
-  "limit": 50,
-  "inspection": "assistant",
-  "presentation": "none",
-  "inspection_candidate_limit": 20,
-  "inspection_media_per_post": 2,
-  "inspection_frame_count": 8,
-  "inspection_max_duration_seconds": 30,
-  "inspection_max_media_mb": 25,
-  "inspection_max_total_mb": 150
-}
-```
-
-処理:
-
-```text
-Firefox auth cookies
-  ↓ x-cli
-x-search.jsonl
-  ↓ prepare_x_inspection_batch.py
-inspection/
-  ├─ candidate-batch.json
-  ├─ media/*
-  └─ contact-sheets/*
-  ↓ actions/upload-artifact
-x-inspection-<request_id>
-```
-
-cookie / auth_token / ct0はartifactへ入れない。
-
-inspection binaryはrepoへcommitしない。`inspection-summary.json`だけをresearch resultへ残す。
-
-## Two-stage video inspection
-
-大量候補を全frameで最初から見る必要はない。
-
-### Recall inspection
-
-- 画像: 原寸またはinspection用copy
-- 短動画: 代表8frame程度のcontact sheet + MP4
-- timeline metadataに尺が無い動画: download後にffprobeで実尺を測る
-- 上限超過の長尺: 初回batchではskipし、別requestへ回す
-
-### Dense inspection
-
-上位候補だけ、必要区間を高密度にframe抽出して比較する。
-
-短いloopなら最終段では全frame相当まで見ることを許容する。
-
-## User-only preview is an exception
-
-`inspection=user_only` は「login-required mediaの標準route」ではない。
-
-使う例:
-
-- ユーザーが明示的にAIへ渡したくない
-- assistant inspection transportへ流さない例外候補
-- 技術的にassistant-side binary transportが失敗し、ユーザー側だけなら表示できる
-
-この場合のみ:
-
-```text
-media URL / metadata
-  ↓ presentation marker
-inspection=user_only
-presentation=preview
-  ↓ Tampermonkey
-ユーザーだけpreview
-  ↓ optional
-AIへ渡す
-```
-
-`AIへ渡す` はcomposerへ添付するだけで自動送信しない。
-
-## Presentation marker
-
-presentationはinspection完了後の最終表示用。
-
-通常のpublic:
+公開されていて通常取得できるmediaは、普通にassistantが確認してよい。
 
 ```text
 access=public
@@ -228,15 +63,35 @@ inspection=assistant
 presentation=inline
 ```
 
-Firefox-authだがassistant inspection済み:
+Xの公開mediaを探すだけなら、原則これで終える。
+
+`possibly_sensitive` や成人向けprofileというmetadataだけを理由に、独自の事前ブロックや大掛かりな隔離処理を追加しない。通常の入力経路で扱えるならそのまま扱う。
+
+## User-only preview route
+
+**本文ではユーザーだけに見せたい候補**は `AIUSE_X_MEDIA_V1` markerを使う。
+
+主な用途:
+
+- login済みFirefoxで取得した候補を、まずユーザー側だけで確認したい
+- 内容が曖昧で、assistantへ明示的に渡す前にユーザーが選別したい
+- assistant-side transportへ流さず、metadata / 作者 / 周辺情報だけで探索を続けたい
 
 ```text
-access=firefox_auth
-inspection=assistant
-presentation=inline
+media URL / metadata
+  ↓
+AIUSE_X_MEDIA_V1
+inspection=user_only
+presentation=preview
+  ↓ Tampermonkey
+user-side preview
 ```
 
-user-only escape hatch:
+**v0.3.1以降は表示された全media cardに `AIへ渡す` を出す。**
+
+`AIへ渡す` はmediaをChatGPT composerへ添付する操作であり、自動送信しない。ユーザーが必要な候補だけ後からassistantへ渡せる。
+
+例:
 
 ```text
 access=firefox_auth
@@ -244,48 +99,90 @@ inspection=user_only
 presentation=preview
 ```
 
-`inspection=assistant` では `AIへ渡す` ボタンを表示しない。
+## Deep visual research — optional
 
-## Sensitive / adult metadata
-
-- X `possibly_sensitive` はbadge / metadataとして保持する。
-- それだけで自動除外しない。
-- 成人向け・きわどいという分類だけでassistant inspectionを止めない。
-- 実際に扱えない対象や内容が明確な場合は、その候補自体を除外する。
-- real-person identityを画像から推測しない。
-
-## Query refinement
-
-assistantが実mediaを見た後、そのvisual情報を次query / seedへ使う。
-
-例:
+visual similarity / animation qualityを本当に比較する必要がある場合だけ、private `AIUse-local-control` の `x_search` とinspection artifactを使える。
 
 ```text
-「キャラ中央固定」
-「背景はほぼ静止」
-「4～8frame級のloop」
-「胴体より髪・腕の遅延motionが主体」
+X native discovery
+  ↓
+metadata recall
+  ↓
+small inspection batch
+  ├─ image
+  └─ MP4 + contact sheet
+  ↓
+assistant visual rerank
+  ↓
+final candidates
 ```
 
-この特徴を投稿語彙、作者、hashtags、周辺アカウントへ写像して再検索する。
+これは**普通の画像検索の標準routeではない**。
 
-良いcreator/postを見つけたら、その後はgeneric keywordを厳しくするより `seed_graph` へ移ることを優先する。
+良いcreator/postが既にある場合はgeneric keywordを厳しくするより `strategy=seed_graph` を使う。profile、followers、Patreon / Ci-en等の継続活動シグナルはcreator recallのpriorとして使えるが、品質の最終判定は実mediaで行う。
 
-モデルが見られなかったcandidateでも、metadataから得た作者・タグ・周辺語彙を使って同方向を探索継続できる。
+動画は最初から全frame展開せず、必要なら代表frame → 上位だけdense inspectionの順でよい。
+
+inspection artifactにはcookie / auth_token / ct0を入れない。binaryはrepoへcommitしない。
+
+## Sensitive / adult handling
+
+- `possibly_sensitive` はmetadata / badgeとして保持してよい。
+- adult / NSFW profileだけで候補を自動除外しない。
+- 独自の「安全そうか」事前分類で探索品質を落とさない。
+- 通常のassistant inputとして扱える候補は普通に確認する。
+- 本文ではassistantに見せない形にしたい候補は `inspection=user_only` markerへ回す。
+- 通常の入力処理で扱えない候補を迂回して強制的にassistantへ渡そうとしない。
+- real-person identityを画像から推測しない。
+
+## Presentation marker
+
+markerは**表示方法**であって、取得方法やinspection方法そのものではない。
+
+通常表示例:
+
+```text
+access=public
+inspection=assistant
+presentation=inline
+```
+
+Firefox-auth取得済みで通常表示する例:
+
+```text
+access=firefox_auth
+inspection=assistant
+presentation=inline
+```
+
+ユーザーだけpreviewする例:
+
+```text
+access=firefox_auth
+inspection=user_only
+presentation=preview
+```
+
+いずれのcardにもv0.3.1以降は `AIへ渡す` を表示する。
 
 ## Completion
 
-visual-reference探索の完成条件:
+通常の画像探索:
 
-1. public / Firefox-authを必要に応じて探索した。
-2. final候補の類似性をmetadataだけでなく実media inspectionで確認した。
-3. ユーザー要求が表示を含むなら、画像またはvideo playerをChatGPT UIに出した。
-4. `assistant inspection済み` と `user-only preview` を混同していない。
-5. Firefox credential自体をassistant / repo / artifactへ搬送していない。
+1. 必要十分な候補を普通の経路で探した。
+2. 不要なlocal runner / ZIP / browser fallbackを起動していない。
+3. 表示要求があればmediaを見える形で出した。
+
+深いX media探索:
+
+1. publicだけで不足する場合のみFirefox-auth等へ拡張した。
+2. visual quality / similarityが重要なら実mediaで確認した。
+3. `assistant inspection` と `user-only preview` を混同していない。
+4. Firefox credentialをassistant / repo / artifactへ搬送していない。
 
 ## Failure handling
 
-- direct media download失敗: candidate-batchに理由を残し、別取得方法またはuser-only previewへ切り替える。
-- ffmpeg無し: MP4自体はartifactへ残し、contact sheet不足を明示する。
-- oversized/long media: recall batchで無理に処理せず、候補選定後のdense inspection requestへ回す。
-- protected/deletedでユーザー自身にもアクセス権がない: 迂回しない。
+- public取得失敗 → 必要ならX native / Firefox-authへ拡張。
+- assistant-side media transportが不要または不適切 → user-only preview。
+- user-onlyで良い候補が見つかった → `AIへ渡す` で必要なものだけ昇格。
+- protected/deletedでユーザー自身にもアクセス権がない → 迂回しない。
