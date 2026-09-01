@@ -5,6 +5,8 @@
 // @description  Render AIUse X media markers inside ChatGPT without sending image pixels to the model; attach selected images to the composer on demand.
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
+// @downloadURL  https://raw.githubusercontent.com/kaillebidan-byte/AIUse/main/tools/chatgpt-inline-x-media/chatgpt-inline-x-media.user.js
+// @updateURL    https://raw.githubusercontent.com/kaillebidan-byte/AIUse/main/tools/chatgpt-inline-x-media/chatgpt-inline-x-media.user.js
 // @grant        GM_xmlhttpRequest
 // @connect      pbs.twimg.com
 // @connect      video.twimg.com
