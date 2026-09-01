@@ -1,0 +1,100 @@
+/ citation badgeより本文の直接リンクを優先する。
+    if (existing) {
+      if (!existing.button.isConnected || rank > existing.rank) {
+        moveEntry(existing, el, rank);
+      }
+      return;
+    }
+
+    const entry = video.kind === 'rplay-live'
+      ? createRplayLiveEntry(el, video, rank)
+      : video.provider === 'Bilibili' && video.kind === 'popup'
+        ? createBilibiliEntry(el, video, rank)
+        : video.kind === 'external'
+          ? createExternalEntry(el, video, rank)
+          : video.kind === 'popup'
+            ? createPopupEntry(el, video, rank)
+            : createEmbedEntry(el, video, rank);
+
+    registry.set(video.key, entry);
+  }
+
+  const LINK_SELECTOR = [
+    'a[href]',
+    '[role="link"]',
+    '[data-href]',
+    '[data-url]',
+    '[data-source-url]',
+    '[data-citation-url]',
+    '[data-external-url]'
+  ].join(',');
+
+  function scan(root) {
+    if (root instanceof Element && root.matches?.(LINK_SELECTOR)) {
+      addPlayerButton(root);
+    }
+    if (root instanceof Element || root instanceof Document) {
+      root.querySelectorAll?.(LINK_SELECTOR).forEach(addPlayerButton);
+    }
+  }
+
+  // ChatGPTは要素を先に作り、href/data-*を後から確定することがある。
+  // addedNodesだけを監視するとそこを落とすので、関連属性の更新も監視する。
+  let fullScanTimer = 0;
+  function scheduleFullScan(delay = 80) {
+    clearTimeout(fullScanTimer);
+    fullScanTimer = setTimeout(() => scan(document), delay);
+  }
+
+  scan(document);
+
+  // 初期描画・ストリーミング・citation解決の時間差を軽い再走査で吸収。
+  for (const delay of [250, 900, 1800, 3500, 6000]) {
+    setTimeout(() => scan(document), delay);
+  }
+
+  const observer = new MutationObserver((mutations) => {
+    let needsFullScan = false;
+
+    for (const mutation of mutations) {
+      if (mutation.type === 'attributes') {
+        if (mutation.target instanceof Element) addPlayerButton(mutation.target);
+        continue;
+      }
+
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          scan(node);
+          needsFullScan = true;
+        }
+      }
+    }
+
+    // React側でsource UIを組み替えるケース用。毎mutationで全走査せずdebounceする。
+    if (needsFullScan) scheduleFullScan();
+  });
+
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: [
+      'href',
+      'data-href',
+      'data-url',
+      'data-source-url',
+      'data-citation-url',
+      'data-external-url',
+      'aria-label',
+      'title'
+    ]
+  });
+
+  // ChatGPTのSPA遷移ではdocument自体は再生成されないため、URL変化時にも再走査。
+  let lastLocation = location.href;
+  setInterval(() => {
+    if (location.href === lastLocation) return;
+    lastLocation = location.href;
+    scheduleFullScan(120);
+  }, 800);
+})();
