@@ -4,8 +4,6 @@
 
 RPLAY liveをブラウザで再生している状態から、signed HTTP-FLV/HLS URLを手作業でDevToolsからコピーせずに、ローカルffmpeg録画へ渡すための軽量helper。
 
-狙いは次の流れ。
-
 ```text
 ChatGPT内のRPLAY liveリンク
   ├─ 別窓で開く
@@ -36,19 +34,32 @@ PowerShell → ffmpeg -c copy
   - ChatGPTではRPLAY liveリンクへ`別窓` / `インライン`buttonを足す。
 - `install_rplay_record_protocol.ps1`
   - current userだけに `aiuse-rplay-record://` URL protocolを登録する。
-  - handlerを `%LOCALAPPDATA%\AIUse\rplay-live-recorder\` へcopyする。
+  - handlerを `%LOCALAPPDATA%\AIUse\rplay-live-recorder\` へ置く。
+  - sibling handlerが無い単体実行時はpublic AIUse rawからhandlerを取得する。
+  - setup後、既定browserでuserscript URLを開く。
 - `rplay_record_protocol.ps1`
   - clipboardからsigned media URLを受け取り、即clipboardを空にしてffmpegを起動する。
 
 ## One-time setup
 
-### 1. URL protocolを登録
-
-このdirectoryをlocalへ置き、PowerShellで一度だけ実行する。
+### Repo cloneがある場合
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\rplay-live-recorder\install_rplay_record_protocol.ps1
 ```
+
+installerはprotocol登録後、Tampermonkey userscript URLを既定browserで開く。Tampermonkey側で`インストール`を押す。
+
+### Installerだけ取得する場合
+
+```powershell
+$u='https://raw.githubusercontent.com/kaillebidan-byte/AIUse/main/tools/rplay-live-recorder/install_rplay_record_protocol.ps1'
+$p=Join-Path $env:TEMP 'install_rplay_record_protocol.ps1'
+Invoke-WebRequest -UseBasicParsing $u -OutFile $p
+powershell -NoProfile -ExecutionPolicy Bypass -File $p
+```
+
+handlerはinstallerが取得するため、repo cloneは不要。
 
 `ffmpeg` がPATHにあることが前提。
 
@@ -57,16 +68,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\rplay-live-recorder\
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\rplay-live-recorder\install_rplay_record_protocol.ps1 -Uninstall
 ```
-
-### 2. Tampermonkeyへuserscriptを登録
-
-`rplay-live-recorder.user.js` をTampermonkeyへ追加する。
-
-対象:
-
-- `https://rplay.live/*`
-- `https://chatgpt.com/*`
-- `https://chat.openai.com/*`
 
 ## Usage
 
@@ -86,7 +87,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\rplay-live-recorder\
 RPLAY liveリンクの横へ次を追加する。
 
 - `別窓`: login/sessionを通常browser contextで使うpopup。第一候補。
-- `インライン`: iframe埋め込みを試す。RPLAY側のframe policyやthird-party cookie制約で使えない場合は別窓へ戻る。
+- `インライン`: iframe埋め込みを試す。ChatGPT CSP、RPLAY frame policy、third-party cookie制約で使えない場合は別窓へ戻る。
 
 iframe内でもTampermonkeyがRPLAY frameへinjectされれば録画buttonを表示できる。
 
@@ -122,6 +123,6 @@ DevTools → x-flv request → URLコピー → PowerShellへ長いffmpeg comman
 
 - live resourceがbrowserへ出る前は録画buttonは有効にならない。
 - playerがresourceを切り替えた場合、既に起動したffmpegは現在のconnectionを使い続ける。切断時の自動reconnectは別改善。
-- iframeがRPLAY側で拒否される場合はinline再生不可。popup routeは影響を受けない。
+- iframeがChatGPT/RPLAY側で拒否される場合はinline再生不可。popup routeは影響を受けない。
 - custom protocolはcurrent Windows userのregistryへ登録するためone-time setupが必要。
 - このprototypeは録画開始を簡易化する。background service化や複数同時録画管理はまだ行わない。
