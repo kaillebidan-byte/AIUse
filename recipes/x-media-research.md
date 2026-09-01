@@ -38,9 +38,10 @@ Firefoxのcookie/tokenはlocal PCに留め、取得済みmediaだけをassistant
 visual similarityやanimation qualityが目的なら、public / Firefox-authを問わず、扱える候補はassistantが実mediaを見てrerankする。
 
 ```text
-X search
-  ├─ public discovery
-  └─ Firefox-auth discovery
+X discovery
+  ├─ keyword/query recall
+  ├─ known-good seed creator/post
+  └─ Firefox-auth graph/timeline discovery
           ↓
 metadata recall
           ↓
@@ -61,6 +62,78 @@ presentation marker
 
 投稿文・bioだけで最終的なvisual類似度を決めない。
 
+## Discovery strategy
+
+### 1. `strategy=query` — broad recall
+
+まだ良いcreator/postが1件も無い時に使う。
+
+```json
+{
+  "mode": "x_search",
+  "strategy": "query",
+  "query": "pixel animation filter:videos",
+  "limit": 50,
+  "inspection": "assistant",
+  "presentation": "none"
+}
+```
+
+keyword queryは**候補発見用**であり最終rankingではない。`18+`, `NSFW`, `WIP`などを厳しくANDするほど品質が上がるとは限らない。実測では数字や無関係な語に引っ張られるfalse positiveが出た。
+
+### 2. `strategy=seed_graph` — preferred after a good seed exists
+
+人間が良い作家/作品を1件見つけた後の探索に近いroute。
+
+```text
+known-good creator
+  ↓ x-cli timeline --media
+そのcreatorのmedia
+  ↓
+following graph
+  ↓
+プロフィール語彙で関連creatorをrecall
+  ↓ x-cli timeline --media
+各creatorのmedia
+  ↓
+assistant visual inspection
+```
+
+request例:
+
+```json
+{
+  "mode": "x_search",
+  "strategy": "seed_graph",
+  "seeds": ["creatorA", "creatorB"],
+  "seed_timeline_limit": 30,
+  "network_limit": 120,
+  "neighbor_limit": 12,
+  "neighbor_timeline_limit": 12,
+  "inspection": "assistant",
+  "presentation": "none",
+  "inspection_candidate_limit": 20,
+  "inspection_frame_count": 8
+}
+```
+
+profile filteringはrecallだけに使う。成人向けcreator探索なら `NSFW`, `18+`, `no minors` 等と `animator`, `Live2D`, `pixel`, `artist` 等を使えるが、**最終採否は実mediaを見て決める**。
+
+verified 2026-09-01 smoke:
+
+```text
+2 seeds
+seed media timelines: 30 + 30
+following scanned: 120 + 120
+related creators retained: 12
+candidate media posts: 192
+assistant inspection batch: 20 media
+```
+
+実inspectionでは同じ成人向けcreator timeline内にもanimation referenceとして有用な作品と、単なるmeme/reaction clipが混在した。したがってgraph/profileだけで終了せずvisual rerankが必要。
+
+x-cli自身の `timeline --media`, `following`, `discover/crawl` を優先して使い、自前crawlerを再発明しない。
+
 ## Firefox-auth assistant inspection
 
 private `AIUse-local-control` の `x_search` requestは次を受ける。
@@ -68,6 +141,7 @@ private `AIUse-local-control` の `x_search` requestは次を受ける。
 ```json
 {
   "mode": "x_search",
+  "strategy": "query",
   "query": "...",
   "limit": 50,
   "inspection": "assistant",
@@ -85,7 +159,7 @@ private `AIUse-local-control` の `x_search` requestは次を受ける。
 
 ```text
 Firefox auth cookies
-  ↓ x-cli search
+  ↓ x-cli
 x-search.jsonl
   ↓ prepare_x_inspection_batch.py
 inspection/
@@ -108,7 +182,8 @@ inspection binaryはrepoへcommitしない。`inspection-summary.json`だけをr
 
 - 画像: 原寸またはinspection用copy
 - 短動画: 代表8frame程度のcontact sheet + MP4
-- 30秒超など重い候補: 初回batchではskipまたは別requestへ回す
+- timeline metadataに尺が無い動画: download後にffprobeで実尺を測る
+- 上限超過の長尺: 初回batchではskipし、別requestへ回す
 
 ### Dense inspection
 
@@ -181,7 +256,7 @@ presentation=preview
 
 ## Query refinement
 
-assistantが実mediaを見た後、そのvisual情報を次queryへ使う。
+assistantが実mediaを見た後、そのvisual情報を次query / seedへ使う。
 
 例:
 
@@ -193,6 +268,8 @@ assistantが実mediaを見た後、そのvisual情報を次queryへ使う。
 ```
 
 この特徴を投稿語彙、作者、hashtags、周辺アカウントへ写像して再検索する。
+
+良いcreator/postを見つけたら、その後はgeneric keywordを厳しくするより `seed_graph` へ移ることを優先する。
 
 モデルが見られなかったcandidateでも、metadataから得た作者・タグ・周辺語彙を使って同方向を探索継続できる。
 
