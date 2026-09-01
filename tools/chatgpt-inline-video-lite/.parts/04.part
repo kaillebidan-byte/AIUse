@@ -1,0 +1,198 @@
+st m = url.pathname.match(/^\/(BV[0-9A-Za-z]+)/i);
+      if (m) {
+        const bvid = m[1];
+        return {
+          kind: 'popup',
+          provider: 'Bilibili',
+          key: `bilibili:bv:${bvid.toLowerCase()}:p1`,
+          popup: `https://player.bilibili.com/player.html?bvid=${encodeURIComponent(bvid)}&autoplay=0&isOutside=true`,
+          page: `https://www.bilibili.com/video/${encodeURIComponent(bvid)}/`,
+          popupWidth: 1280,
+          popupHeight: 720,
+          popupTitle: '公式external playerを小窓で再生',
+          bvid,
+          aid: null,
+          partPage: 1
+        };
+      }
+    }
+
+    // RPLAY current live. Discovery emits canonical /live/<creatorOid> URLs.
+    if (host === 'rplay.live') {
+      const liveMatch = url.pathname.match(/^\/live\/([0-9a-f]{24})(?:\/|$)/i);
+      if (liveMatch) {
+        const creatorOid = liveMatch[1].toLowerCase();
+        const page = `https://rplay.live/live/${creatorOid}`;
+        return {
+          kind: 'rplay-live',
+          provider: 'RPLAY',
+          key: `rplay-live:${creatorOid}`,
+          page,
+          embed: page,
+          popup: page,
+          popupWidth: 1100,
+          popupHeight: 780
+        };
+      }
+    }
+
+    // TwitCasting本体だけでなく ja. / mail2. 等のsubdomainも許可。
+    if (/(^|\.)twitcasting\.tv$/i.test(url.hostname)) {
+      const parts = url.pathname.split('/').filter(Boolean).map(safeDecode);
+
+      // https://*.twitcasting.tv/<user>/movie/<movieId>
+      if (parts.length >= 3 && parts[1] === 'movie' && /^\d+$/.test(parts[2])) {
+        const user = parts[0];
+        const movieId = parts[2];
+        return {
+          kind: 'popup',
+          provider: 'ツイキャス',
+          key: `twitcasting-movie:${user.toLowerCase()}:${movieId}`,
+          page: `https://twitcasting.tv/${encodeURIComponent(user)}/movie/${movieId}`,
+          popup:
+            `https://twitcasting.tv/${encodeURIComponent(user)}/embeddedplayer/${movieId}` +
+            `?auto_play=false&default_mute=false`
+        };
+      }
+
+      // https://*.twitcasting.tv/<user>/archive?... は動画1本ではなく一覧。
+      if (parts.length >= 2 && parts[1] === 'archive') {
+        const user = parts[0];
+        return {
+          kind: 'external',
+          provider: 'ツイキャス一覧',
+          key: `twitcasting-archive:${user.toLowerCase()}`,
+          url: url.href
+        };
+      }
+
+      // https://*.twitcasting.tv/<user>
+      if (parts.length === 1) {
+        const user = parts[0];
+        return {
+          kind: 'popup',
+          provider: 'ツイキャスLIVE',
+          key: `twitcasting-live:${user.toLowerCase()}`,
+          page: `https://twitcasting.tv/${encodeURIComponent(user)}`,
+          popup:
+            `https://twitcasting.tv/${encodeURIComponent(user)}/embeddedplayer/live` +
+            `?auto_play=false&default_mute=false`
+        };
+      }
+    }
+
+    return null;
+  }
+
+  function parseVideo(raw) {
+    for (const candidate of possibleUrls(raw)) {
+      const video = parseDirectVideo(candidate);
+      if (video) return video;
+    }
+    return null;
+  }
+
+  function getVideoFromElement(el) {
+    const candidates = new Set();
+
+    const add = value => {
+      if (typeof value === 'string' && value.trim()) candidates.add(value.trim());
+    };
+
+    add(el.href);
+    add(el.getAttribute?.('href'));
+    add(el.getAttribute?.('data-href'));
+    add(el.getAttribute?.('data-url'));
+    add(el.getAttribute?.('data-source-url'));
+    add(el.getAttribute?.('data-citation-url'));
+    add(el.getAttribute?.('data-external-url'));
+    add(el.getAttribute?.('aria-label'));
+    add(el.getAttribute?.('title'));
+
+    // ChatGPTのsource/citation UIは元URLをdata-*に持つ場合がある。
+    if (el.dataset) {
+      for (const value of Object.values(el.dataset)) add(value);
+    }
+
+    for (const candidate of candidates) {
+      const video = parseVideo(candidate);
+      if (video) return video;
+    }
+
+    return null;
+  }
+
+  const scopeRegistry = new WeakMap();
+
+  function getMessageScope(el) {
+    return el.closest?.('[data-message-author-role="assistant"], article') || document.body;
+  }
+
+  function getRegistry(scope) {
+    let registry = scopeRegistry.get(scope);
+    if (!registry) {
+      registry = new Map();
+      scopeRegistry.set(scope, registry);
+    }
+    return registry;
+  }
+
+  function citationLike(el) {
+    const text = (el.innerText || el.textContent || '').trim();
+    // ChatGPTのsource badgeは「YouTube\n+2\nFC2動画\n+2」のようになりやすい。
+    return /(?:^|\n)\+\d+(?:\n|$)/.test(text);
+  }
+
+  function ownerRank(el, video) {
+    let rank = 0;
+    const href = el.href || el.getAttribute?.('href') || '';
+    const direct = parseDirectVideo(href);
+    if (direct?.key === video.key) rank += 100;
+    if (!citationLike(el)) rank += 50;
+
+    const text = (el.innerText || el.textContent || '').trim();
+    if (text && text.length <= 120) rank += 10;
+    if (video.kind === 'external' && /archive/i.test(href)) rank += 5;
+    return rank;
+  }
+
+  function moveEntry(entry, el, rank) {
+    entry.owner = el;
+    entry.rank = rank;
+    el.insertAdjacentElement('afterend', entry.button);
+    if (entry.player?.isConnected) {
+      entry.button.insertAdjacentElement('afterend', entry.player);
+    }
+  }
+
+  function createEmbedEntry(el, video, rank) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ivl-play';
+    btn.dataset.ivlKey = video.key;
+    btn.textContent = `▶ ${video.provider}`;
+    btn.title = video.autoExpand ? '公式external playerを再表示' : 'このページ内で再生';
+
+    const entry = {
+      owner: el,
+      rank,
+      button: btn,
+      player: null,
+      probeFallback: false
+    };
+
+    let probeTimer = null;
+    let probeMessageHandler = null;
+    let probeViolationHandler = null;
+
+    const clearProbe = () => {
+      if (probeTimer) {
+        clearTimeout(probeTimer);
+        probeTimer = null;
+      }
+      if (probeMessageHandler) {
+        window.removeEventListener('message', probeMessageHandler);
+        probeMessageHandler = null;
+      }
+      if (probeViolationHandler) {
+  
