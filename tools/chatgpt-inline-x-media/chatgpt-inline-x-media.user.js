@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AIUse ChatGPT Inline X Media
 // @namespace    https://github.com/kaillebidan-byte/AIUse
-// @version      0.3.0
-// @description  Render AIUse X image/video presentation markers; access, model inspection, and presentation are separate concerns.
+// @version      0.3.1
+// @description  Render AIUse X image/video presentation markers; all displayed media can be handed to the ChatGPT composer.
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
 // @downloadURL  https://raw.githubusercontent.com/kaillebidan-byte/AIUse/main/tools/chatgpt-inline-x-media/chatgpt-inline-x-media.user.js
@@ -260,7 +260,7 @@
     head.className = 'aiuse-x-media-head';
     const who = payload.author?.screen_name ? `@${payload.author.screen_name}` : (payload.author?.name || 'X media');
     const title = document.createElement('span');
-    title.textContent = `${who} · ${payload.media.length} media · v0.3.0`;
+    title.textContent = `${who} · ${payload.media.length} media · v0.3.1`;
     head.appendChild(title);
 
     if (payload.possibly_sensitive) {
@@ -294,7 +294,6 @@
 
     const grid = document.createElement('div');
     grid.className = 'aiuse-x-media-grid';
-    const canPromote = policy.inspection === 'user_only';
 
     payload.media.forEach((media, index) => {
       const url = sanitizeUrl(media.url || media.thumbnail_url);
@@ -317,13 +316,14 @@
       const status = document.createElement('span');
       status.className = 'aiuse-x-media-status';
 
-      if (canPromote) {
-        const send = document.createElement('button');
-        send.type = 'button';
-        send.textContent = 'AIへ渡す';
-        send.addEventListener('click', () => attachMedia(media, index, send, status));
-        actions.appendChild(send);
-      }
+      // Handoff is an explicit user action, not an inspection-policy gate.
+      // Even media already inspected during discovery may be useful as an
+      // explicit attachment for a later animation/comparison discussion.
+      const send = document.createElement('button');
+      send.type = 'button';
+      send.textContent = 'AIへ渡す';
+      send.addEventListener('click', () => attachMedia(media, index, send, status));
+      actions.appendChild(send);
 
       const hide = document.createElement('button');
       hide.type = 'button';
