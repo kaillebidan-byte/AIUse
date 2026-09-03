@@ -25,12 +25,18 @@ jobs:
           python tools/futaba-thread-reader/futaba_img_reader.py "$URL" --json -o /tmp/futaba-thread.json
           python - <<'PY'
           import json
+          import urllib.request
           from pathlib import Path
           d=json.loads(Path('/tmp/futaba-thread.json').read_text(encoding='utf-8'))
           assert d.get('thread_no'), d
           assert d.get('post_count',0) > 0, d
           assert d.get('posts'), d
           assert d['posts'][0].get('text'), d
+          image_url = d['posts'][0].get('image_url')
+          if image_url:
+              req = urllib.request.Request(image_url, headers={'User-Agent':'Mozilla/5.0','Referer':d['source_url']})
+              with urllib.request.urlopen(req, timeout=20) as r:
+                  Path('/tmp/futaba-op.png').write_bytes(r.read())
           print('FUTABA LIVE PASS')
           print('thread_no=', d['thread_no'])
           print('post_count=', d['post_count'])
@@ -42,6 +48,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: futaba-thread-reader-live-output
-          path: /tmp/futaba-thread.json
+          path: |
+            /tmp/futaba-thread.json
+            /tmp/futaba-op.png
           if-no-files-found: error
           retention-days: 1
