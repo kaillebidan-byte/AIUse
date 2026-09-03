@@ -16,6 +16,7 @@ toolが**取得・変換の実装**、recipeが**routing・作業完了条件・
 | [twitch-archive-discovery.md](twitch-archive-discovery.md) | Twitch archive候補発見→shortlist→PC保存 | VOD URL発見だけ |
 | [twitcasting-archive-discovery.md](twitcasting-archive-discovery.md) | TwitCasting録画候補発見→shortlist→PC保存 | archive URL列挙だけ |
 | [rplay-discovery.md](rplay-discovery.md) | RPLAY login済みDiscovery→公開replay/file候補→PC保存。候補提示時は併せて [rplay-access-presentation-policy.md](rplay-access-presentation-policy.md) を適用 | rendered page URL発見だけ / 無料gate候補の除外 |
+| [withny-discovery.md](withny-discovery.md) | Withny login済みDiscovery→persistent Firefoxでlive/archiveを開く→PC保存 | 検索結果の「ライブ」表示だけ / page openだけ / media URL発見だけ |
 | [youtube-video-discovery.md](youtube-video-discovery.md) | YouTube native search→shortlist→PC保存 | search result URLだけ |
 | [reddit-research.md](reddit-research.md) | Redditの評判・体験談・雑談を拾う | 検索結果タイトルだけ |
 | [x-media-research.md](x-media-research.md) | Xで画像/動画/GIFを探し、assistant visual inspection後に本文提示する | metadataだけ / post URLだけ |
