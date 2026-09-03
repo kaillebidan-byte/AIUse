@@ -24,6 +24,7 @@ AI / assistant workflows用の再利用可能な補助ツールとrecipe置き�
 | 「Twitchアーカイブ探して」「〇〇の雑談系VOD候補」「候補からDLして」 | [twitch-archive-discovery](recipes/twitch-archive-discovery.md) | channel解決→archive候補取得→assistant再ランキング→選択VODをlocal PCへ保存 |
 | 「ツイキャス配信一覧」「TwitCasting録画探して」「候補からDLして」 | [twitcasting-archive-discovery](recipes/twitcasting-archive-discovery.md) | handle解決→Firefox認証付きarchive候補取得→assistant再ランキング→選択movieをlocal PCへ保存 |
 | 「YouTubeで〇〇探して」「長尺/雑談/解説動画候補」「2番DLして」 | [youtube-video-discovery](recipes/youtube-video-discovery.md) | native search→assistant再ランキング→選択動画をFirefox認証付きyt-dlpでlocal PCへ保存 |
+| 「Withnyで配信者/ライブ/アーカイブ探して」「開いて録画して」 | [withny-discovery](recipes/withny-discovery.md) | current live/access確認→同一persistent Firefox sessionでopen→選択live/archiveをlocal PCへ保存→ffprobe |
 | 「Reddit調べて」「Redditの反応・評判」 | [reddit-research](recipes/reddit-research.md) | relevant threadだけでなく必要なcommentまで確認。ChatGPT web優先 |
 | 「Xから画像探して」「Xの画像を本文に貼って/見せて」 | [x-image-research](recipes/x-image-research.md) | 元post/media確認→**最終回答本文で実画像表示**まで |
 | 「ふたばの過去スレも探して」「img/may過去ログを掘って」 | [futaba-archive-research](recipes/futaba-archive-research.md) | 一般検索0件で不存在判定せず、過去ログ検索→archive本文確認まで |
@@ -46,6 +47,12 @@ DLはDiscoveryと分離し、選択された `/movie/<id>` だけFirefox cookies
 URLが不明な探索では通常Webだけに依存せず、private local-controlが使える場合は `youtube_search` のnative searchを利用できる。候補のtitle/channel/duration等を取得し、assistantが意味的にshortlistする。
 
 保存は既存known-goodの **Firefox cookies + yt-dlp + Deno/EJS** 経路を使い、動画本体はGitHubへ返さずlocal PCにだけ置く。詳細は `recipes/youtube-video-discovery.md`。
+
+### Withny
+
+Withnyはログイン済みFirefoxの表示状態がDiscovery/recordingへ影響するため、private local-controlが使える場合は `withny_search` とpersistent Firefox sessionを使う。検索結果の「ライブ」表示だけでは現在liveとみなさず、channel状態と追加支払い要否を確認する。
+
+録画ではFirefoxを候補ごと・fallbackごとに起動終了しない。同じsessionで対象を開いたまま、archiveは観測した直接media、liveはFirefox BiDiで実際に要求されたtoken付きAWS IVS HLSをローカルffmpegへ渡し、ffprobeまで確認する。署名/token付き完全URLはGitHubへ残さない。詳細は `recipes/withny-discovery.md`。
 
 ### X / Reddit / Futaba notes
 
@@ -106,6 +113,7 @@ AIUse/
 | [twitch-archive-discovery](recipes/twitch-archive-discovery.md) | Twitch archive候補発見→shortlist→PC直DL |
 | [twitcasting-archive-discovery](recipes/twitcasting-archive-discovery.md) | TwitCasting archive候補発見→shortlist→Firefox認証付きPC直DL |
 | [youtube-video-discovery](recipes/youtube-video-discovery.md) | YouTube native search→shortlist→PC直DL |
+| [withny-discovery](recipes/withny-discovery.md) | Withny login済みDiscovery→persistent Firefoxでlive/archiveを開く→PC直保存 |
 | [reddit-research](recipes/reddit-research.md) | Reddit thread/comment調査 |
 | [x-image-research](recipes/x-image-research.md) | X元post/media確認→本文内実画像表示 |
 | [futaba-archive-research](recipes/futaba-archive-research.md) | 消滅済みふたばスレの過去ログDiscovery |
